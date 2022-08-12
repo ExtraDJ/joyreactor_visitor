@@ -1,0 +1,31 @@
+.postContainer,
+#content {
+	transition: all 0.3s ease;
+}
+.postContainer:hover {
+	opacity: 1 !important;
+}
+
+.JV_title {
+	cursor: pointer;
+}
+.JV_title .manage_post_wr {
+	display: none;
+}
+.JV_title .post_content {
+	max-height: 150px !important;
+	transition: all 0.3s ease;
+}
+.JV_title .hightlighted {
+	max-height: 150px !important;
+	transition: all 0.3s ease;	
+}
+.JV_title:hover .manage_post_wr {
+	display: revert;
+}
+.JV_title:hover .post_content {
+	max-height: 2000px !important;
+}
+.JV_title:hover .hightlighted {
+	max-height: 2000px !important;
+}

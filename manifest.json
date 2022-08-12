@@ -1,0 +1,40 @@
+{
+	"manifest_version": 3,
+	"name": "JoyReactor Visitor",
+	"short_name": "JoyReactor Visitor",
+	"description": "",
+	"author": "ExtraDJ",
+	"version": "0.4.4",
+	"homepage_url": "https://patreon.com/extradj",
+	"icons": {
+		"128": "data/images/logo.png"
+	},
+	"action": {
+		"default_icon": "data/images/enabled.png"
+	},
+	"permissions": [
+		"storage",
+		"history",
+		"downloads",
+		"unlimitedStorage"
+	],
+	"background": {
+		"service_worker": "data/js/script.js"
+	},
+	"options_ui": {
+		"page": "data/options.html",
+		"open_in_tab": true
+	},
+	"content_scripts": [{
+		"matches": [
+			"*://joyreactor.cc/*", 
+			"*://reactor.cc/*",
+			"*://*.reactor.cc/*",
+			"*://jr-proxy.com/*",
+			"*://jrproxy.com/*"
+		],
+		"run_at": "document_end",
+		"js": ["data/js/content.js"],
+		"css": ["data/css/content.css"]
+	}]
+}

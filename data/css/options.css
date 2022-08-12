@@ -1,0 +1,157 @@
+* {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+	transition: all 0.3s ease;
+}
+.hide {
+	display: none;
+}
+textarea, input {
+	padding: 5px;
+	resize: none;
+	width: 100%;
+}
+input[type="radio"],
+input[type="file"] {
+	display: none;
+}
+button,
+input[type="file"] + label,
+input[type="radio"] + label {
+	display: inline-block;
+	background: #fdb201;
+	cursor: pointer;
+	font-size: 14px;
+	font-weight: bold;
+	line-height: 20px;
+	margin-bottom: 10px;
+	padding: 12px 20px;
+	text-align: left;
+	width: 100%;
+	border: none;
+	color: #454545;
+}
+button:active,
+input[type="file"]:checked + label,
+input[type="radio"]:checked + label {
+	background: #fed410;
+}
+input[type="range"] {
+	position: relative;
+	cursor: pointer;
+	height: 44px;
+	overflow: hidden;
+	padding: 0;
+	width: 100%;
+	-webkit-appearance: none;
+}
+input[type="range"]::-moz-range-track {
+	background: #fed410;
+	height: 44px;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+	background: #fed410;
+	height: 44px;
+}
+input[type="range"]::-moz-range-thumb {
+	box-shadow: -100vw 0 0 100vw #fdb201;
+	height: 100%;
+	width: 0px;
+	border: 0;
+	-webkit-appearance: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+	box-shadow: -100vw 0 0 100vw #fdb201;
+	height: 100%;
+	width: 0px;
+	border: 0;
+	-webkit-appearance: none;
+}
+input[type="range"]:before {
+	display: block;
+	position: absolute;
+	color: #454545;
+	content: attr(title);
+	font-size: 14px;
+	font-weight: bold;
+	left: 0px;
+	line-height: 44px;
+	text-align: center;
+	top: 0px;
+	width: 100%;
+}
+body {
+	display: block;
+	background: rgba(254, 204, 101, 1);
+	color: #454545;
+	font-family: 'Open Sans', sans-serif;
+	padding: 15px 0 0 0;
+	align-items: center;
+}
+main {
+	margin: 0 auto;
+	width: 860px;
+}
+header {
+	background: rgb(41, 29, 2, 0.7);
+	text-align: center;
+}
+header > h1 {
+	position: relative;
+	background-image: url(../images/logow.png);
+	background-position: 10% 50%;
+	background-repeat: no-repeat;
+	color: #fff;
+	font-size: 48px;
+	font-weight: 300;
+	height: 128px;
+	line-height: 128px;	
+	width: 100%;
+}
+header > h1 > a {
+	position: absolute;
+	right: 10%;
+}
+header > h1 > a > svg {
+	height: 128px;
+	width: 64px;
+}
+header > h3 {
+	background: rgba(253, 218, 151, 1);
+	font-size: 28px;
+	font-weight: 700;
+	line-height: 48px;
+	width: 100%;
+}
+form {
+	display: inline-table;
+	background: #fff;
+	width: 100%;
+}
+form > div {
+	display: table-row;
+}
+form > div > div {
+	display: table-cell;
+	position: relative;
+	padding: 15px;
+	vertical-align: middle;
+}
+form > div > div:first-child {
+	font-weight: 700;
+	width: 40%;
+}
+form > div > div > span {
+	display: block;
+	font-size: 16px;
+}
+form > div > div > span.help {
+	font-size: 12px;
+	font-weight: 400;
+}
+form > div > div > input + span {
+	text-align: center;
+	font-size: 14px;
+	font-weight: bold;
+}

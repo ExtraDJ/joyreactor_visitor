@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>JoyReactor Visitor Options</title>
+	<link href="css/options.css" rel="stylesheet">
+	<script type="module" src="js/options.js"></script>
+</head>
+
+<body>
+	<main>
+		<header>
+			<h1>
+				JoyReactor Visitor
+				<a href="https://www.patreon.com/extradj" target="_blank" title="Псс, парень, не хочешь задонатить?"><svg height="546px" version="1.1" viewBox="0 0 569 546" width="569px" xmlns="http://www.w3.org/2000/svg"><g><circle cx="362.589996" cy="204.589996" r="204.589996" fill="#ff424d"></circle><rect height="545.799988" width="100" x="0" y="0" fill="#ff424d"></rect></g></svg></a>
+			</h1>
+			<h3>Настройки</h3>
+		</header>
+		<form>
+			<div>
+				<div>
+					<span>Импорт/Экспорт</span>
+					<span class="help">Вы можете экспортировать список просмотренных постов для восстановления, в случаи необходимости. Это может быть полезно перед переустановкой операционной системы</span>
+				</div>
+				<div>
+					<input type="file" id="import" name="import">
+					<label for="import">Импорт</label>
+					<button type="button" id="export">Экспорт</button>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Исключить теги</span>
+					<span class="help">Укажите через запятую важные вам теги. Посты с этими тегами не будут скрываться. Фильтрация чувствительна к регистру!</span>
+				</div>
+				<div>
+					<textarea name="tags" rows="3" placeholder="anon, реактор, dev"></textarea>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Метод исключения</span>
+					<span class="help">Вы можете выбрать, где будут игнорироваться посты с введенными тегами</span>
+				</div>
+				<div>
+					<input type="radio" name="exceptions" id="exceptions-1" value="all">
+					<label for="exceptions-1">Игнорировать везде</label>
+					<input type="radio" name="exceptions" id="exceptions-2" value="tag">
+					<label for="exceptions-2">Только при просмотре фэндомов/тегов</label>
+					<input type="radio" name="exceptions" id="exceptions-3" value="notag">
+					<label for="exceptions-3">Только при просмотре вне фэндомов/тегов</label>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Переключать страницы</span>
+					<span class="help">Выберите более удобный для вас алгоритм действий, когда все посты на странице уже просмотрены</span>
+				</div>
+				<div>
+					<input type="radio" name="pager" id="pager-1" value="withoutfirst">
+					<label for="pager-1">Переключить на следующую, если это не первая</label>
+					<input type="radio" name="pager" id="pager-2" value="all">
+					<label for="pager-2">Переключить на следующую в любом случаи</label>
+					<input type="radio" name="pager" id="pager-3" value="disable">
+					<label for="pager-3">Отключить автоматический переход</label>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Просмотренные</span>
+					<span class="help">Выберите более удобной для вас алгоритм действий с уже просмотренными постами</span>
+				</div>
+				<div>
+					<input type="radio" name="post" id="post-1" value="hide">
+					<label for="post-1">Полностью скрыть</label>
+					<input type="radio" name="post" id="post-2" value="translucent">
+					<label for="post-2">Сделать полупрозрачным</label>
+					<input type="radio" name="post" id="post-3" value="title">
+					<label for="post-3">Заголовок + элементы управления. Кнопка комментариев, рейтинга и т.д.</label>
+					<input type="radio" name="post" id="post-4" value="title_translucent">
+					<label for="post-4">Заголовок + элементы управления. Полупрозрачный</label>
+				</div>
+			</div>
+			<div id="opacity" class="hide">
+				<div>
+					<span>Прозрачность</span>
+					<span class="help">Вы можете отрегулировать степень прозрачности просмотренных постов</span>
+				</div>
+				<div>
+					<input name="opacity" type="range" min="0" max="100" step="5" />
+					<span></span>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Глубина</span>
+					<span class="help">Как далеко заглядывать в историю при проверке постов</span>
+				</div>
+				<div>
+					<input name="depth" type="range" min="0" max="5" step="1" />
+					<span></span>
+				</div>
+			</div>
+		</form>
+	</main>
+</body>
+</html>
