@@ -6,7 +6,7 @@ function is_num(number) {
 	return (typeof number == 'number' && !isNaN(number));
 }
 function is_firefox() {
-	if (typeof browser !== 'undefined' && typeof chrome.runtime !== 'undefined') { return true; }
+	if (typeof browser !== 'undefined') { return true; }
 	return false;
 }
 function depthTitle(value) {
