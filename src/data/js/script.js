@@ -2,9 +2,9 @@ var $options = {};
 var $data = [];
 
 async function startUp() {
-	let regexp = new RegExp("(http|https)://[a-zA-Z0-9-.]*(reactor|jr-proxy|jrproxy)[a-z.]+/post/([0-9]+)[\/]{0,1}");
+	const regexp = new RegExp("(http|https)://[a-zA-Z0-9-.]*(reactor|jr-proxy|jrproxy)[a-z.]+/post/([0-9]+)[/]{0,1}");
 	// get all history. check by url, because multidomain, but single engine and database
-	chrome.history.search({'text': '/post/', 'maxResults': 1000000, 'startTime': 0}, function(visits, error) {
+	chrome.history.search({'text': '/post/', 'maxResults': 1000000, 'startTime': 0}, function(visits) {
 		if (visits.length > 0) {
 			do {
 				let item = visits.shift();
@@ -26,7 +26,7 @@ async function startUp() {
 }
 async function getOptions() {
 	// get options with default data
-	let options = (await chrome.storage.sync.get({
+	const options = (await chrome.storage.sync.get({
 		options: {
 			tags: '',
 			exceptions: 'tag',
@@ -58,34 +58,35 @@ async function setStatus(status) {
 	}
 }
 async function getVisited() {
-	return new Promise(function(resolve, reject) {
+	return new Promise(function(resolve) {
 
-		var offset;
+		let offset;
 		switch (parseInt($options.depth)) {
-			case 0:
+			case 0: // 24 h
 				offset = Math.floor(Date.now() / 1000) - (60*60*24);
 				break;
-			case 1:
+			case 1: // 1 week
 				offset = Math.floor(Date.now() / 1000) - (60*60*24*7);
 				break;
-			case 2:
+			case 2: // 2 week
 				offset = Math.floor(Date.now() / 1000) - (60*60*24*14);
 				break;
-			case 3:
+			case 3: // 1 month
 				offset = Math.floor(Date.now() / 1000) - (60*60*24*30);
 				break;
-			case 4:
+			case 4: // 6 months
 				offset = Math.floor(Date.now() / 1000) - (60*60*24*180);
 				break;
-			case 5:
+			case 5: // without limits
 				offset = 0;
 				break;
 		}
 
-		var result = [];
+		const result = [];
 
-		chrome.storage.local.get(null, function(object, error) {
-			let list = Object.values(object);
+		// get all data from storage
+		chrome.storage.local.get(null, function(object) {
+			const list = Object.values(object);
 			if (list.length > 0) {
 				do {
 					let item = list.shift();
@@ -103,12 +104,17 @@ async function getVisited() {
 chrome.runtime.onMessage.addListener(async function(request, sender, sendResponse) {
 	sendResponse(true);
 
+	// permanently save to ram
 	if (Object.keys($options).length == 0)
 		$options = await getOptions();
 
+	// permanently save to ram
 	if ($data.length == 0)
 		$data = await getVisited($options);
 
+	// tmp object
+	let data = {};
+	
 	switch (request.action) {
 		case 'start': // check to start
 			if (await getStatus()) { // reply only if extension enabled
@@ -116,7 +122,6 @@ chrome.runtime.onMessage.addListener(async function(request, sender, sendRespons
 			}
 			break;
 		case 'mark': // mark post as viewed
-			let data = {};
 			data[request.data] = {
 				id: parseInt(request.data),
 				added: parseInt(Math.floor(Date.now() / 1000))
@@ -147,7 +152,7 @@ chrome.storage.sync.onChanged.addListener(async function() {
 
 // toggle enable status
 chrome.action.onClicked.addListener(async function(tab) {
-	let enabled = await getStatus();
+	const enabled = await getStatus();
 
 	if (enabled) { // if enabled
 		setStatus(false);

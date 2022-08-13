@@ -3,7 +3,7 @@ var $options = {};
 var $data = [];
 
 function post(item) {
-	let post_id = parseInt(item.querySelector('.ufoot a.link[href*="post"]').href.match(/([0-9]+)$/)[1]);
+	const post_id = parseInt(item.querySelector('.ufoot a.link[href*="post"]').href.match(/([0-9]+)$/)[1]);
 	
 	// default without exceptions
 	let exceptions = [];
@@ -21,7 +21,7 @@ function post(item) {
 	}
 
 	if (exceptions.length > 0) {
-		let tags = item.getElementsByClassName('taglist')[0].getElementsByTagName('a');
+		const tags = item.getElementsByClassName('taglist')[0].getElementsByTagName('a');
 
 		// tags ignore
 		for (const [k, tag] of Object.entries(tags)) {
@@ -49,7 +49,7 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 			// disallow for single post, userpage, tagpage, discussion list, users list
 			if (!['post', 'user', 'tag', 'discussion', 'people'].includes(window.location.pathname.split('/')[1])) {
 
-				let items = Object.entries(document.getElementsByClassName('postContainer'));
+				const items = Object.entries(document.getElementsByClassName('postContainer'));
 
 				// translucent animation
 				if (items.length > 0) {
@@ -58,13 +58,13 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 
 				for (const [key, item] of items) {
 					// check every post
-					let post_id = post(item);
+					const post_id = post(item);
 
 					// if didnt have exceptions
 					if (post_id) {
 						// if visited					
 						if ($data.includes(post_id)) {
-							let post_block = document.getElementById('postContainer'+post_id);
+							const post_block = document.getElementById(`postContainer${post_id}`);
 							switch ($options.post) {
 								case 'hide':
 									post_block.remove();
@@ -132,7 +132,7 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
 
 window.addEventListener('scroll', function() {
 	// check all posts
-	for (let post_id in $posts) {
+	for (const post_id in $posts) {
 		// get position on page
 		let position = $posts[post_id].getBoundingClientRect();
 		// if the block is fully visible on screen
@@ -143,7 +143,7 @@ window.addEventListener('scroll', function() {
 			// kick from exec
 			delete $posts[post_id];
 		}
-	};
+	}
 });
 
 // start?
