@@ -8,3 +8,4 @@ Firefox - переименовать manifest.json.firefox в manifest.json, а 
 Заменить во всей файлах chrome.action -> browser.browserAction, chrome. -> browser.
 Зайти в расширения, включить режим разраба, отдладка дополнений, выбрать папку
  
+Patreon: https://www.patreon.com/extradj

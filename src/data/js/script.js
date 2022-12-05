@@ -1,5 +1,4 @@
 var $options = {};
-var $data = [];
 
 async function startUp() {
 	const regexp = new RegExp("(http|https)://[a-zA-Z0-9-.]*(reactor|jr-proxy|jrproxy)[a-z.]+/post/([0-9]+)[/]{0,1}");
@@ -57,7 +56,7 @@ async function setStatus(status) {
 		chrome.action.setIcon({path: '../images/disabled.png'});
 	}
 }
-async function getVisited() {
+async function check(ids) {
 	return new Promise(function(resolve) {
 
 		let offset;
@@ -85,7 +84,7 @@ async function getVisited() {
 		const result = [];
 
 		// get all data from storage
-		chrome.storage.local.get(null, function(object) {
+		chrome.storage.local.get(ids, function(object) {
 			const list = Object.values(object);
 			if (list.length > 0) {
 				do {
@@ -108,18 +107,17 @@ chrome.runtime.onMessage.addListener(async function(request, sender, sendRespons
 	if (Object.keys($options).length == 0)
 		$options = await getOptions();
 
-	// permanently save to ram
-	if ($data.length == 0)
-		$data = await getVisited($options);
-
 	// tmp object
 	let data = {};
 	
 	switch (request.action) {
 		case 'start': // check to start
 			if (await getStatus()) { // reply only if extension enabled
-				chrome.tabs.sendMessage(sender.tab.id, {action: 'start', options: $options, data: $data});
+				chrome.tabs.sendMessage(sender.tab.id, {action: 'start', data: $options});
 			}
+			break;
+		case 'check': // chech posts in storage
+			chrome.tabs.sendMessage(sender.tab.id, {action: 'check', data: await check(request.data)});
 			break;
 		case 'mark': // mark post as viewed
 			data[request.data] = {
@@ -127,7 +125,6 @@ chrome.runtime.onMessage.addListener(async function(request, sender, sendRespons
 				added: parseInt(Math.floor(Date.now() / 1000))
 			}
 
-			$data.push(parseInt(request.data));
 			chrome.storage.local.set(data);
 			break;
 	}
@@ -147,11 +144,10 @@ chrome.runtime.onStartup.addListener(async function() {
 });
 chrome.storage.sync.onChanged.addListener(async function() {
 	$options = await getOptions();
-	$data = await getVisited($options);
 });
 
 // toggle enable status
-chrome.action.onClicked.addListener(async function(tab) {
+chrome.action.onClicked.addListener(async function() {
 	const enabled = await getStatus();
 
 	if (enabled) { // if enabled
@@ -159,7 +155,14 @@ chrome.action.onClicked.addListener(async function(tab) {
 	} else {
 		setStatus(true);
 	}
-	
+
 	// send reload
-	await chrome.tabs.sendMessage(tab.id, {action: 'reload'});
+	chrome.tabs.query({
+		active: true, 
+		url: chrome.runtime.getManifest()['content_scripts'][0]['matches']
+	}, function(tabs) {
+		for (var i in tabs) {
+			chrome.tabs.sendMessage(tabs[i].id, {action: 'reload'});
+		}
+	});
 });
