@@ -4,7 +4,7 @@
 	"short_name": "JoyReactor Visitor",
 	"description": "",
 	"author": "ExtraDJ",
-	"version": "0.5.0",
+	"version": "0.8.2",
 	"homepage_url": "https://patreon.com/extradj",
 	"icons": {
 		"128": "data/images/logo.png"
@@ -14,9 +14,17 @@
 	},
 	"permissions": [
 		"storage",
+		"unlimitedStorage",
 		"history",
 		"downloads",
-		"unlimitedStorage"
+		"webRequest",
+		"webRequestBlocking",
+		"*://joyreactor.cc/*", 
+		"*://*.joyreactor.cc/*", 
+		"*://reactor.cc/*",
+		"*://*.reactor.cc/*",
+		"*://jr-proxy.com/*",
+		"*://jrproxy.com/*"
 	],
 	"background": {
 		"scripts": ["data/js/script.js"]
@@ -28,15 +36,19 @@
 	"content_scripts": [{
 		"matches": [
 			"*://joyreactor.cc/*", 
+			"*://*.joyreactor.cc/*", 
 			"*://reactor.cc/*",
 			"*://*.reactor.cc/*",
 			"*://jr-proxy.com/*",
 			"*://jrproxy.com/*"
 		],
 		"run_at": "document_end",
-		"js": ["data/js/content.js"],
+		"js": ["data/js/jquery.js", "data/js/content.js"],
 		"css": ["data/css/content.css"]
 	}],
+	"web_accessible_resources": [
+		"data/templates.html"
+	],
 	"browser_specific_settings": {
 		"gecko": {
 			"id": "{c9563af4-bd9f-4ac6-a07f-a5f90162d986}"

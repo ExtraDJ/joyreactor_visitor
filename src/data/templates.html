@@ -1,0 +1,203 @@
+<templates>
+	<template id="JV_tagPage">
+		<div id="tagArticle">
+			<img id="contentInnerHeader" src="//img10.reactor.cc/pics/avatar/tag/article/{{~item~.tag_id}}" style="display: none;">
+			<div id="blogHeader">
+				<div id="breadCrumb">
+					<div class="sideheader taginfo">
+						<span>{{~array~.breadcrumbs.JV_breadcrumbs}}</span>
+						<span class="fn">{{~item~.breadcrumbsCurrent}}</span>
+					</div>
+				</div>
+				<img itemprop="photo" src="//img10.reactor.cc/pics/avatar/tag/{{~item~.tag_id}}" alt="{{~item~.name}}" class="blog_avatar {{~check~.image.0.hide}}">
+				<div id="blogName">
+					<h1>{{~item~.name}}</h1>
+					<strong>{{~item~.synonyms}}</strong>
+					<span id="blogSubscribers">
+						Подписчиков:&nbsp;<span>{{~item~.subscribers}}</span>
+						&nbsp;&nbsp;&nbsp;
+						Сообщений:&nbsp;<span>{{~item~.count}}</span>
+						&nbsp;&nbsp;&nbsp;
+						Рейтинг постов:&nbsp;<span>{{~item~.rating}}</span>
+					</span>
+				</div>
+				<div id="blogFavroiteLinks">
+					<p class="{{~item~.favorite.class}}">
+						<a data-tag_id="{{~item~.tag_id}}" class="change_favorite_link" title="добавить в любимые - посты с этим тегом всегда будут появляться в вашей персональной ленте">
+						{{~item~.favorite.text}}</a>
+					</p>
+					<p class="{{~item~.block.class}}">
+						<a data-tag_id="{{~item~.tag_id}}" class="change_favorite_link" title="добавить в нелюбимые - посты с этим тегом никогда не будут появляться в вашей персональной ленте">
+						{{~item~.block.text}}</a>
+					</p>
+				</div>
+			</div>
+			{{~item~.description}}
+			{{~item~.description_expand}}
+		</div>
+	</template>
+	<template id="JV_breadcrumbs">
+		<span><a href="{{~item~.url}}">{{~item~.name}}</a></span>
+		&nbsp;<span class="delimiter">&gt;</span>&nbsp;
+	</template>
+	<template id="JV_pagination">
+		<div id="Pagination" class="pagination">
+			<div class="pagination_main">
+				<a class="prev {{~item~.pagination.prev.class}}" href="{{~item~.pagination.prev.href}}"></a>
+
+				<div class="pagination_toggler">...</div>
+				<div class="pagination_expanded" style="display: none;">{{~array~.pagination.expanded.JV_page}}</div>
+
+				<a class="next {{~item~.pagination.next.class}}" href="{{~item~.pagination.next.href}}"></a>
+			</div>
+		</div>
+	</template>
+	<template id="JV_page">{{~item~}}</template>
+	<template id="JV_post">
+		<div id="postContainer{{~item~.post_id}}" class="postContainer">
+			<div class="article post-normal">
+				<div class="post_top">
+					<div class="uhead">
+						<div class="uhead_share">
+							<span class="share_buttons">
+								<span class="favorite_link" post_id="{{~item~.post_id}}"></span>
+								<a class="share_vk" rel="nofollow" href="http://vkontakte.ru/share.php?url=https%3A%2F%2Fjoyreactor.cc%2Fpost%2F{{~item~.post_id}}%3Fsocial%3D1" target="_blank"></a>
+								<a class="share_fb" rel="nofollow" href="http://www.facebook.com/sharer.php?u=https%3A%2F%2Fjoyreactor.cc%2Fpost%2F{{~item~.post_id}}%3Fsocial%3D1" target="_blank"></a>
+								<a class="share_twitter" rel="nofollow" href="http://twitter.com/home?status=https%3A%2F%2Fjoyreactor.cc%2Fpost%2F{{~item~.post_id}}%3Fsocial%3D1" target="_blank"></a>
+							</span>
+						</div>
+						<div class="uhead_nick">
+							<img src="//img2.reactor.cc/pics/avatar/user/{{~item~.user.id}}" class="avatar" alt="{{~item~.user.username}}">
+							<a class="offline_username" href="/user/{{~item~.user.username}}">{{~item~.user.username}}</a>
+						</div>
+					</div>
+					<h2 class="taglist">{{~array~.tagsList.JV_tag}}</h2>
+					<img alt="Copywrite" src="/images/censorship/copywrite.jpg">
+				</div>
+				<div class="ufoot">
+					<div class="ufoot_first">
+						<span class="comments">
+							<a href="/post/{{~item~.post_id}}" class="commentnum JV_toggleComments" title="количество комментариев">Комментарии {{~item~.commentsCount}}</a>
+							<span class="commentnumDelta" title="количество комментариев"></span>
+						</span>
+						<span class="date">
+							<span class="" data-time="">
+								<span class="date">{{~item~.date}}</span>
+								<span class="time">{{~item~.time}}</span>
+							</span>
+						</span>
+						<span class="link_wr">
+							<a title="ссылка на пост" class="link" href="/post/{{~item~.post_id}}">ссылка</a>
+						</span>
+						<span class="hidden_link">
+							<a title="скрыть содержимое поста" href="/hidden/create/{{~item~.post_id}}">скрыть</a>
+						</span>
+						{{~array~.vote.JV_rating}}
+						<div class="manage_post_wr">
+							<span style="display:none;" class="post_set_header">
+								<form action=""><label><input type="text" name="post_header" class="post_header" size="74" value=""></label><input type="submit" name="commit" value="Сохранить"></form>
+							</span>
+							<span style="display:none;" class="post_add_tag">
+								<form action=""><label><input type="text" name="tag" size="74" value="" class="tag_autocomplete ui-autocomplete-input" autocomplete="off"></label><input type="submit" name="commit" value="Сохранить"></form>
+							</span>
+							<span class="manage">
+								<span class="delete adminOnly" userid="{{~item~.user.id}}" timestamp="{{~item~.timestamp}}">
+									<a href="/manage/post/edit/{{~item~.post_id}}" title="редактировать пост">редактировать</a>
+								</span>
+								<span class="delete adminOnly" userid="{{~item~.user.id}}" timestamp="{{~item~.timestamp}}">
+									<a href="/post/delete/{{~item~.post_id}}?" title="удалить пост" class="csrfLink" data-confirm="Действительно удалить пост?">удалить</a>
+								</span>
+								<span class="spam moderatorOnly">
+									<a href="/post/spam/{{~item~.post_id}}" class="csrfLink" data-confirm="Действительно забанить пост?">бан</a>
+								</span>
+								<span class="banTag">
+									<a href="/post/tagBan/{{~item~.post_id}}" class="csrfLink" data-confirm="Действительно забанить пост?">бан</a>
+								</span>
+								<span class="moderatorOnly setTag" userid="{{~item~.user.id}}" style="display: inline;">
+									<a href="javascript:" title="добавить теги" class="link setTagLink">добавить теги</a>
+								</span>
+								<span class="adminOnly wrongTag" userid="{{~item~.user.id}}">
+									<a href="/abuse-tag/{{~item~.post_id}}" title="неправильные теги!" class="link wrongTagLink">неправильные теги!</a>
+								</span>
+								<span class="moderatorOnly">
+									<a href="javascript:" title="редактировать заголовок H1" class="link setHeaderLink">заголовок</a>
+								</span>
+								<span class="adminOnly">
+									<a href="/post/penalty/{{~item~.post_id}}?" class="csrfLink" data-confirm="Действительно снять рейтинг пользователю?">штраф</a>
+								</span>
+							</span>
+						</div>
+					</div>
+					<div class="post_comment_list" style="display: none;"></div>
+				</div>
+			</div>
+		</div>
+	</template>
+	<template id="JV_tag">
+		<b><a title="{{~item~.name}}" data-ids="{{~item~.ids}}" href="/tag/{{~item~.link}}">{{~item~.name}}</a>&nbsp;</b>
+	</template>
+	<template id="JV_rating">
+		<span class="post_rating">
+			<span>
+				{{~item~.rating}}
+				<div class="vote-plus {{~item~.vote_plus}}"></div>
+				<div class="vote-minus {{~item~.vote_minus}}"></div>
+			</span>
+		</span>
+	</template>
+	<template id="JV_comments">
+		<div class="comment_list_post" id="comment_list_post_{{~item~.post_id}}" creatorid="{{~item~.user.id}}"></div>
+		<div class="add-comment-link" data-post-id="{{~item~.post_id}}">
+			<a class="response" href="javascript:">Написать комментарий</a>
+		</div>
+		<div id="addcomment_post_{{~item~.post_id}}" class="addcomment" style="display: block;">
+			<form action="/post_comment/create" method="post" enctype="multipart/form-data" class="post_comment_form">
+				<div class="add_comment_flash" style="display:none"></div>
+				<input type="hidden" class="parent_id" value="0" name="parent_id">
+				<input type="hidden" class="post_id" value="{{~item~.post_id}}" name="post_id">
+				<input type="hidden" class="token" value="" name="token">
+				<textarea name="comment_text" class="comment_text" rows="5" cols="75"></textarea>
+				<br>
+				<input type="button" name="commit" value="Написать" class="JV_submit">
+				Картинка:
+				<span>
+					<a href="javascript:" class="more_file">из файла</a>
+					<input type="file" accept="image/*" name="comment_picture" class="comment_picture" value="" style="display:none">
+					&nbsp;
+					<a href="javascript:" class="more_url">из URL</a>
+					<input type="text" name="comment_picture_url" class="comment_picture_url" value="" style="display:none">
+				</span>
+			</form>
+		</div>
+	</template>
+	<template id="JV_comment_child">
+		<div id="comment_list_comment_{{~item~.parent.id}}" class="comment_list" creatorid="{{~item~.user.id}}"></div>
+	</template>
+	<template id="JV_comment">
+		<div id="comment{{~item~.id}}" class="comment hightlighted filled{{~item~.class}}" parent="{{~item~.parent.id}}" timestamp="{{~item~.timestamp}}" userid="{{~item~.user.id}}">
+			<div class="txt" id="comment_txt_{{~item~.post_id}}_{{~item~.id}}">
+				<div>{{~item~.text}}</div>
+				<div class="comments_bottom">
+					<img src="//img2.reactor.cc/pics/avatar/user/{{~item~.user.id}}" class="avatar" alt="{{~item~.user.username}}">
+					<span class="reply-link">
+						<a href="/user/{{~item~.user.username}}" class="comment_username">{{~item~.user.username}}</a>
+						<span class="comment_date">
+							<span class="" data-time="{{~item~.timestamp}}">
+								<span class="date">{{~item~.date}}</span>
+								<span class="time">{{~item~.time}}</span>
+							</span>
+						</span>
+						<a href="javascript:" class="response">ответить</a>
+						<a href="/post/{{~item~.post_id}}#comment{{~item~.id}}" class="comment_link">ссылка</a>
+					</span>
+					<span class="comment_rating" comment_id="{{~item~.id}}">
+						<span>{{~item~.rating}}
+							<div class="vote-plus" title="голосовать за"></div>
+							<div class="vote-minus" title="голосовать против"></div>
+						</span>
+					</span>
+				</div>
+			</div>
+		</div>
+	</template>
+</templates>

@@ -1,13 +1,19 @@
+const is_firefox = function() {
+	if (typeof browser !== 'undefined') { return true; }
+	return false;
+}
+const getEngine = function() {
+	if (typeof browser !== 'undefined') { return browser; }
+	return chrome;
+}
+const engine = getEngine();
+
 function is_num(number) {
 	if (number === null || number === undefined)
 		return false;
 
 	number = parseInt(number);
 	return (typeof number == 'number' && !isNaN(number));
-}
-function is_firefox() {
-	if (typeof browser !== 'undefined') { return true; }
-	return false;
 }
 function depthTitle(value) {
 	let title;
@@ -43,12 +49,15 @@ document.addEventListener('DOMContentLoaded', async function() {
 	}
 
 	// get current options
-	const options = (await chrome.storage.sync.get({
+	const options = (await engine.storage.sync.get({
 		options: {
 			tags: '',
 			exceptions: 'tag',
 			pager: 'withoutfirst',
-			post: 'hide',
+			tag_mark: 'enabled',
+			download: 'enabled',
+			download_folder: 'JV',
+			post: 'translucent',
 			opacity: 0.6,
 			depth: 3
 		}
@@ -62,7 +71,12 @@ document.addEventListener('DOMContentLoaded', async function() {
 			case 'tags':
 				document.querySelector(`[name="${key}"]`).innerText = value;
 				break;
+			case 'download_folder':
+				document.querySelector(`[name="${key}"]`).value = value;
+				break;
 			case 'pager':
+			case 'tag_mark':
+			case 'download':
 			case 'exceptions':
 				document.querySelector(`[name="${key}"][value="${value}"]`).click();
 				break;
@@ -98,8 +112,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 		switch (key) {
 			case 'tags':
 			case 'pager':
+			case 'tag_mark':
+			case 'download':
 			case 'exceptions':
 				options[key] = value;
+				break;
+			case 'download_folder':
+				options[key] = value.trim().replace(/^\/+|\/+$/, '');
 				break;
 			case 'post':
 				options[key] = value;
@@ -137,7 +156,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 						}
 					}
 					// set all
-					chrome.storage.local.set(data);
+					engine.storage.local.set(data);
 				});
 
 				reader.readAsText(event.target.files[0]);
@@ -145,9 +164,36 @@ document.addEventListener('DOMContentLoaded', async function() {
 		}
 
 		// save
-		await chrome.storage.sync.set({options: options});
+		await engine.storage.sync.set({options: options});
 	});
 
+	// flush all
+	document.getElementById('flush').addEventListener('click', async function() {
+		if (confirm('Вы уверены что хотите очистить историю просмотра?')) {
+			engine.storage.local.clear();
+		}
+	});
+	// flush cache
+	document.getElementById('cache').addEventListener('click', async function() {
+		if (confirm('Вы уверены что хотите очистить кеш?')) {
+			engine.storage.local.get(null, function(data) {
+				let update = {};
+				let remove = [];
+				for (const post_id in data) {
+					if (!('added' in data[post_id])) {
+						remove.push(post_id);
+						continue;
+					}
+					update[post_id] = {
+						id: data[post_id].id,
+						added: data[post_id].added
+					}
+				}
+				engine.storage.local.remove(remove);
+				engine.storage.local.set(update);
+			});
+		}
+	});
 	// export
 	document.getElementById('export').addEventListener('click', async function() {
 		// get all data
@@ -155,7 +201,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 			const result = [];
 
-			chrome.storage.local.get(null, function(object) {
+			engine.storage.local.get(null, function(object) {
 				const list = Object.values(object);
 				if (list.length > 0) {
 					do {
@@ -175,7 +221,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 		const d = new Date;
 		const filename = 'joyreactor_'+[padL(d.getMonth()+1), padL(d.getDate()), d.getFullYear()].join('_')+'_'+[padL(d.getHours()), padL(d.getMinutes()), padL(d.getSeconds())].join('_')+'.txt';
 		// download
-		chrome.downloads.download({
+		engine.downloads.download({
 			url: file, 
 			filename: filename, 
 			conflictAction: 'overwrite'

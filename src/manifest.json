@@ -4,7 +4,7 @@
 	"short_name": "JoyReactor Visitor",
 	"description": "",
 	"author": "ExtraDJ",
-	"version": "0.5.0",
+	"version": "0.8.2",
 	"homepage_url": "https://patreon.com/extradj",
 	"icons": {
 		"128": "data/images/logo.png"
@@ -15,9 +15,11 @@
 	"permissions": [
 		"tabs",
 		"storage",
+		"unlimitedStorage",
 		"history",
 		"downloads",
-		"unlimitedStorage"
+		"declarativeNetRequest",
+		"webRequest"
 	],
 	"background": {
 		"service_worker": "data/js/script.js"
@@ -29,13 +31,33 @@
 	"content_scripts": [{
 		"matches": [
 			"*://joyreactor.cc/*", 
+			"*://*.joyreactor.cc/*", 
 			"*://reactor.cc/*",
 			"*://*.reactor.cc/*",
 			"*://jr-proxy.com/*",
 			"*://jrproxy.com/*"
 		],
 		"run_at": "document_end",
-		"js": ["data/js/content.js"],
+		"js": ["data/js/jquery.js", "data/js/content.js"],
 		"css": ["data/css/content.css"]
+	}],
+	"host_permissions": [
+		"*://joyreactor.cc/*", 
+		"*://*.joyreactor.cc/*", 
+		"*://reactor.cc/*",
+		"*://*.reactor.cc/*",
+		"*://jr-proxy.com/*",
+		"*://jrproxy.com/*"
+	],
+	"web_accessible_resources": [{ 
+		"resources": ["data/templates.html"],
+		"matches": [
+			"*://joyreactor.cc/*", 
+			"*://*.joyreactor.cc/*", 
+			"*://reactor.cc/*",
+			"*://*.reactor.cc/*",
+			"*://jr-proxy.com/*",
+			"*://jrproxy.com/*"
+		]
 	}]
 }

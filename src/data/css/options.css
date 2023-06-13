@@ -112,10 +112,17 @@ header > h1 {
 header > h1 > a {
 	position: absolute;
 	right: 10%;
+	height: 100%;
 }
 header > h1 > a > svg {
-	height: 128px;
+	height: 105px;
 	width: 64px;
+}
+header > h1 > a:last-child {
+	right: 2%;
+}
+header > h1 > a:last-child > svg {
+	width: unset;
 }
 header > h3 {
 	background: rgba(253, 218, 151, 1);
