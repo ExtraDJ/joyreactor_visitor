@@ -142,6 +142,34 @@
 			</div>
 			<div>
 				<div>
+					<span>Игрнорировать страницы</span>
+					<span class="help">Вы можете указать на каких типах страницах не делать ничего с просмотренными постами. Разделить запятой<br>
+					Что такое тип страницы:
+					https://joyreactor.cc/<b>discussion</b>/my
+					https://joyreactor.cc/<b>post</b>/12345
+					https://joyreactor.cc/<b>user</b>/username
+					</span>
+				</div>
+				<div>
+					<input type="text" name="ignore_url" />
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Просмотренные на страницах</span>
+					<span class="help">Вы можете выбрать типы страниц на которых можно изменять просмотренные посты</span>
+				</div>
+				<div>
+					<input type="radio" name="page_action" id="page_action-1" value="all">
+					<label for="page_action-1">Все</label>
+					<input type="radio" name="page_action" id="page_action-2" value="tag">
+					<label for="page_action-2">Только при просмотре фэндомов/тегов</label>
+					<input type="radio" name="page_action" id="page_action-3" value="notag">
+					<label for="page_action-3">Только при просмотре вне фэндомов/тегов</label>
+				</div>
+			</div>
+			<div>
+				<div>
 					<span>Просмотренные</span>
 					<span class="help">Выберите более удобной для вас алгоритм действий с уже просмотренными постами</span>
 				</div>

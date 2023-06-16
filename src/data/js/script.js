@@ -1,6 +1,15 @@
+const is_firefox = function() {
+	if (typeof browser !== 'undefined') { return true; }
+	return false;
+}
 const getEngine = function() {
 	if (typeof browser !== 'undefined') {
 		browser.action = browser.browserAction;
+
+		if (browser.storage.session == undefined) {
+			browser.storage.session = browser.storage.local;
+		}
+
 		return browser;
 	}
 	return chrome;
@@ -12,6 +21,7 @@ class JV {
 		this.options = {};
 		this.links = {};
 		this.redirects = {};
+		this.server_time = {};
 	}
 	async init() {
 		const $this = this;
@@ -29,9 +39,28 @@ class JV {
 	handler() {
 		const $this = this;
 
-		engine.runtime.onMessage.addListener(async function(request, sender) {				
-			
+		engine.runtime.onMessage.addListener(async function(request, sender) {
 			switch (request.action) {
+				case 'time': // set server time
+					$this.server_time = request.data;
+					break;
+				case 'me': // get/set user info
+					engine.tabs.sendMessage(sender.tab.id, {action: 'me', data: await $this.me(request.data)});
+					break;
+				case 'options': // send extension options
+					engine.tabs.sendMessage(sender.tab.id, {action: 'options', data: $this.options});
+					break;
+				case 'check': // check posts in storage
+					// if extension disabled or no action on visited posts
+					if ($this.options.post == 'none' || !await $this.getStatus()) {
+						engine.tabs.sendMessage(sender.tab.id, {action: 'check', data: []});
+					} else {
+						engine.tabs.sendMessage(sender.tab.id, {action: 'check', data: await $this.check(request.data)});
+					}
+					break;
+				case 'unlock': // unlock censored
+					engine.tabs.sendMessage(sender.tab.id, {action: 'unlock', data: await $this.unlock(request.data)});
+					break;
 				case 'tag': // tag page
 					let params;
 					let url;
@@ -76,16 +105,6 @@ class JV {
 						url: decodeURI(url)
 					});
 					break;
-				case 'start': // check to start
-					engine.tabs.sendMessage(sender.tab.id, {action: 'start', data: $this.options});
-					break;
-				case 'check': // chech posts in storage
-					if ($this.options.post == 'none' || !await $this.getStatus()) {
-						engine.tabs.sendMessage(sender.tab.id, {action: 'check', data: []});
-					} else {
-						engine.tabs.sendMessage(sender.tab.id, {action: 'check', data: await $this.check(request.data)});
-					}
-					break;
 				case 'mark': // mark post as viewed
 					engine.storage.local.get([request.data], function(data) {
 						if (!(request.data in data))
@@ -99,14 +118,11 @@ class JV {
 						engine.storage.local.set(data);
 					});
 					break;
-				case 'unlock':
-					engine.tabs.sendMessage(sender.tab.id, {action: 'unlock', data: await $this.unlock(request.data)});
-					break;
 				case 'download':
 					if (engine.runtime.getManifest().manifest_version == 3) {
 						engine.downloads.download({
 							url: request.data.data, 
-							filename: `${$this.options.download_folder}/${request.data.filename}`,
+							filename: `${$this.options.download_folder}${request.data.filename}`,
 							conflictAction: 'overwrite'
 						});
 					} else {
@@ -115,7 +131,7 @@ class JV {
 							headers: [
 								{name: 'Referer', value: 'https://joyreactor.cc/'}
 							],
-							filename: `${$this.options.download_folder}/${request.data.filename}`,
+							filename: `${$this.options.download_folder}${request.data.filename}`,
 							conflictAction: 'overwrite'
 						});
 					}
@@ -279,7 +295,7 @@ class JV {
 						$this.redirects[event.tabId] = $this.links[event.requestId];
 					}
 					return {
-						redirectUrl: `${new URL(event.originUrl).origin}#JV=tag`
+						redirectUrl: `${new URL(event.url).origin}#JV=tag`
 					};
 				}
 			},
@@ -289,6 +305,34 @@ class JV {
 			},
 			['blocking']
 		);
+	}
+	async me(data) {
+		return new Promise(function(resolve) {
+			// flush cache
+			if (data === 'flush') {
+				engine.storage.session.remove('me');
+				resolve(false);
+			} else {
+				// get from cache
+				if (data === undefined) {
+					engine.storage.session.get('me', function(cache) {
+						const time = Math.floor(Date.now() / 1000);
+						if ('me' in cache) {
+							// cached 1h
+							if ((time - cache.me.time) < 3600) {
+								resolve(cache.me);
+							}
+						} 
+
+						resolve(false);
+					});
+				} else { // set cache
+					data.time = Math.floor(Date.now() / 1000);
+					engine.storage.session.set({me: data});
+					resolve(data);
+				}
+			}
+		});
 	}
 	async startUp() {
 		const regexp = new RegExp("(http|https)://[a-zA-Z0-9-.]*(reactor|jr-proxy|jrproxy)[a-z.]+/post/([0-9]+)[/]{0,1}");
@@ -328,7 +372,9 @@ class JV {
 				pager: 'withoutfirst',
 				tag_mark: 'enabled',
 				download: 'enabled',
-				download_folder: 'JV',
+				download_folder: 'JV/',
+				ignore_url: ['post', 'user', 'discussion', 'people'],
+				page_action: 'all',
 				post: 'translucent',
 				opacity: 0.6,
 				depth: 3
@@ -349,10 +395,12 @@ class JV {
 	async setStatus(status) {
 		await engine.storage.sync.set({enabled: status});
 
+		let path = '..';
+		if (is_firefox()) { path = 'data'; }
 		if (status) {
-			engine.action.setIcon({path: '../images/enabled.png'});
+			engine.action.setIcon({path: `${path}/images/enabled.png`});
 		} else {
-			engine.action.setIcon({path: '../images/disabled.png'});
+			engine.action.setIcon({path: `${path}/images/disabled.png`});
 		}
 	}
 	async check(ids) {
@@ -382,7 +430,7 @@ class JV {
 					break;
 			}
 
-			const result = [];
+			let result = {};
 
 			// get all data from storage
 			engine.storage.local.get(ids, function(object) {
@@ -390,8 +438,11 @@ class JV {
 				if (list.length > 0) {
 					do {
 						const item = list.shift();
+						if (item.added === undefined)
+							continue;
+
 						if (item.added > offset) {
-							result.push(item.id);
+							result[item.id] = new Date(item.added * 1000).toLocaleString('uk-UA').replaceAll(',', '');
 						}
 					} while (list.length > 0);
 				}
@@ -401,6 +452,8 @@ class JV {
 		});
 	}
 	async unlock(postIds) {
+		const $this = this;
+
 		return new Promise(function(resolve) {
 
 			engine.storage.local.get(postIds, function(exists) {
@@ -418,7 +471,7 @@ class JV {
 							continue;
 					}
 
-					params.push(`post${post_id}:node(id:"${btoa(`Post:${post_id}`)}") { ... on Post { text attributes { id type ...Attribute_attribute } tags { seoName } } }`);
+					params.push(`post${post_id}:node(id:"${btoa(`Post:${post_id}`)}") { ... on Post { createdAt text attributes { id type ...Attribute_attribute } tags { seoName } } }`);
 				}
 
 				if (params.length > 0) {
@@ -438,14 +491,20 @@ class JV {
 								...AttributeEmbed_attribute 
 							}`})
 					}).then(response => response.json()).then(function(response) {
-
+						let cached = {};
 						for (const [key, post] of Object.entries(response.data)) {
 							const post_id = key.match(/[0-9]+/)[0];
+							const added = Math.floor(new Date(post.createdAt).getTime() / 1000);
 
 							Object.assign(data[post_id], post);
-						}
 
-						engine.storage.local.set(data);
+							if (($this.server_time - added) > 3600)
+								cached[post_id] = data[post_id]
+						}
+						
+						if (Object.keys(cached).length > 0) {
+							engine.storage.local.set(cached);
+						}
 
 						resolve(data);
 					});
@@ -550,16 +609,22 @@ class JV {
 
 				for (const post of response.postPager.posts) {
 					const post_id = atob(post.id).match(/([0-9]+)/)[1];
-					data[post_id] = {text: post.text, attributes: post.attributes, tags: post.tags};
+					const added = Math.floor(new Date(post.createdAt).getTime() / 1000);
+
+					if (($this.server_time - added) > 3600)
+						data[post_id] = {text: post.text, attributes: post.attributes, tags: post.tags};
+
 				}
 
-				engine.storage.local.get(Object.keys(data), function(exists) {
-					for (let key in exists) {
-						Object.assign(data[key], exists[key]);
-					}
-					
-					engine.storage.local.set(data);
-				});
+				if (Object.keys(data).length > 0) {
+					engine.storage.local.get(Object.keys(data), function(exists) {
+						for (let key in exists) {
+							Object.assign(data[key], exists[key]);
+						}
+						
+						engine.storage.local.set(data);
+					});
+				}
 
 				resolve(response);
 			});

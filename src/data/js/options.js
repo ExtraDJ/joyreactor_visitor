@@ -56,7 +56,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 			pager: 'withoutfirst',
 			tag_mark: 'enabled',
 			download: 'enabled',
-			download_folder: 'JV',
+			download_folder: 'JV/',
+			ignore_url: ['post', 'user', 'discussion', 'people'],
+			page_action: 'all',
 			post: 'translucent',
 			opacity: 0.6,
 			depth: 3
@@ -71,14 +73,18 @@ document.addEventListener('DOMContentLoaded', async function() {
 			case 'tags':
 				document.querySelector(`[name="${key}"]`).innerText = value;
 				break;
-			case 'download_folder':
-				document.querySelector(`[name="${key}"]`).value = value;
-				break;
+			case 'exceptions':
 			case 'pager':
 			case 'tag_mark':
 			case 'download':
-			case 'exceptions':
+			case 'page_action':
 				document.querySelector(`[name="${key}"][value="${value}"]`).click();
+				break;
+			case 'download_folder':
+				document.querySelector(`[name="${key}"]`).value = value;
+				break;
+			case 'ignore_url':
+				document.querySelector(`[name="${key}"]`).value = value.join(', ');
 				break;
 			case 'post':
 				document.querySelector(`[name="${key}"][value="${value}"]`).click();
@@ -111,14 +117,25 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 		switch (key) {
 			case 'tags':
+			case 'exceptions':
 			case 'pager':
 			case 'tag_mark':
 			case 'download':
-			case 'exceptions':
+			case 'page_action':
 				options[key] = value;
 				break;
 			case 'download_folder':
-				options[key] = value.trim().replace(/^\/+|\/+$/, '');
+				let path = value.trim().replace(/^\/+|\/+$/, '');
+				if (path) { path += '/'; }
+				options[key] = path;
+				break;
+			case 'ignore_url':
+				let pages = [];
+				for (let i of value.split(',')) {
+					i = i.trim();
+					if (i) { pages.push(i); }
+				}
+				options[key] = pages;
 				break;
 			case 'post':
 				options[key] = value;
@@ -180,6 +197,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 				let update = {};
 				let remove = [];
 				for (const post_id in data) {
+					if (!is_num(post_id))
+						continue;
+
 					if (!('added' in data[post_id])) {
 						remove.push(post_id);
 						continue;
@@ -206,6 +226,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 				if (list.length > 0) {
 					do {
 						let item = list.shift();
+						if (!is_num(item.id))
+							continue;
+
 						// post_id:added (unix)
 						result.push(`${item.id}:${item.added}`);
 					} while (list.length > 0);
