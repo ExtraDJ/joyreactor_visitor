@@ -126,9 +126,10 @@ class JV {
 		this.posts = {};
 		this.unlock = [];
 		this.options = {};
+		this.status;
 		this.url = window.location.pathname.split('/');
 
-		this.user_id;
+		this.user_id = null;
 		this.server_time;
 		this.tags = {
 			subscribed: {},
@@ -155,12 +156,9 @@ class JV {
 		* 10. will fuck a duck
 		*/
 
-		// if post page - mark post as viewed
-		if (['post'].includes($this.url[1]))
-			engine.runtime.sendMessage({action: 'mark', data: $this.url[2]});
-
 		// do not run if image
-		if (!['pics', 'images'].includes($this.url[1])) {
+		// or user comments page
+		if (!['pics', 'images'].includes($this.url[1]) && !['comments'].includes($this.url[3])) {
 			// get and set server time
 			$this.server_time = parseInt(document.documentElement.outerHTML.match(/server_time = ([0-9]+);/)[1]);
 			engine.runtime.sendMessage({action: 'time', data: $this.server_time});
@@ -182,6 +180,8 @@ class JV {
 				case 'options': // received options
 					// save options
 					$this.options = request.data;
+					// save extension status enabled/disabled
+					$this.status = request.status;
 					// if this is redirected
 					if (window.location.href.includes('JV=tag')) {
 						engine.runtime.sendMessage({action: 'tag', url: document.referrer});
@@ -223,6 +223,22 @@ class JV {
 			}
 		});
 
+		// return to default when clicking on a post
+		$(document).on('click', '.postContainer', function() {
+			$(this).removeClass('JV_title');
+			$(this).css('opacity', 1);
+			$(this).find('.post_content').css('max-height', '100%');
+			$(this).find('.post_content_expand').css('display', 'none');
+		});
+		// mark on click link/vote
+		$(document).on('click', '.postContainer a, .postContainer .vote-plus, .postContainer .vote-minus', function() {
+			const post_id = $(this).parents('.postContainer').attr('id').match(/([0-9]+)$/)[1];
+			engine.runtime.sendMessage({action: 'mark', data: post_id});
+		});
+		// download all post content
+		$(document).on('click', '[data-action="download"]', function() {
+			$this.download($(this));
+		});
 		// tag subscribe/unsubscribe/block
 		$(document).on('click', '[data-tag_id]', function(event) {
 			event.preventDefault();
@@ -248,10 +264,6 @@ class JV {
 		// send comment
 		$(document).on('click', '.JV_submit', function() {
 			$this.sendComment(new FormData($(this).parent('form')[0]))
-		});
-		// download all post content
-		$(document).on('click', '[data-action="download"]', function() {
-			$this.download($(this));
 		});
 		// tag subscribe/unsubscribe/block, login, logout - flush cache
 		$(document).on('click', '.change_favorite_link, #logout, input[value="Войти"]', function() {
@@ -287,6 +299,7 @@ class JV {
 	async me(cache) {
 		const $this = this;
 		return new Promise(function(resolve) {
+			// if no cache
 			if (typeof cache === 'boolean') {
 				fetch('https://api.joyreactor.cc/graphql', {
 					method: 'POST',
@@ -297,27 +310,38 @@ class JV {
 					body: JSON.stringify({query: `{ me { user { id } blockedTags { id name synonyms } subscribedTags { id name synonyms } } }`})
 				}).then(response => response.json()).then(function(response) {
 					let data = {
-						user_id: atob(response.data.me.user.id).match(/([0-9]+)/)[1],
+						user_id: null,
 						tags: {
 							blocked: {},
 							subscribed: {}
 						}
 					}
+					// if user logged
 					if (response.data.me !== null) {
-						data.user_id = atob(response.data.me.user.id).match(/([0-9]+)/)[1];
-						for (const item of response.data.me.blockedTags) {
-							data.tags.blocked[atob(item.id).match(/([0-9]+)/)[1]] = `${item.name}, ${item.synonyms}`.split(',').map(function(e) { return e.trim() }).filter(function(e) { return e != ''; });
+						data = {
+							user_id: atob(response.data.me.user.id).match(/([0-9]+)/)[1],
+							tags: {
+								blocked: {},
+								subscribed: {}
+							}
 						}
-						for (const item of response.data.me.subscribedTags) {
-							data.tags.subscribed[atob(item.id).match(/([0-9]+)/)[1]] = `${item.name}, ${item.synonyms}`.split(',').map(function(e) { return e.trim() }).filter(function(e) { return e != ''; });
+						if (response.data.me !== null) {
+							data.user_id = atob(response.data.me.user.id).match(/([0-9]+)/)[1];
+							for (const item of response.data.me.blockedTags) {
+								data.tags.blocked[atob(item.id).match(/([0-9]+)/)[1]] = `${item.name}, ${item.synonyms}`.split(',').map(function(e) { return e.trim() }).filter(function(e) { return e != ''; });
+							}
+							for (const item of response.data.me.subscribedTags) {
+								data.tags.subscribed[atob(item.id).match(/([0-9]+)/)[1]] = `${item.name}, ${item.synonyms}`.split(',').map(function(e) { return e.trim() }).filter(function(e) { return e != ''; });
+							}
 						}
 					}
-
+					// to cache
 					engine.runtime.sendMessage({action: 'me', data: data});
 
 					resolve(false);
 				});
 			} else {
+				// from cache
 				$this.user_id = cache.user_id;
 				$this.tags = cache.tags;
 
@@ -339,15 +363,16 @@ class JV {
 			// get post_id and options to check
 			const post = $this.postData($(this));
 
-			// if didnt have exceptions
-			if (post.check) {
-				check.push(post.post_id);
-
-				// save globally
-				$this.posts[post.post_id] = $(this).find('.ufoot');
-			}  else {
+			// if this is exception
+			if (!post.check) {
 				$(this).addClass('JV_exception');
 			}
+
+			// to check
+			check.push(post.post_id);
+			
+			// save globally
+			$this.posts[post.post_id] = $(this).find('.ufoot');
 
 			// post is censored?
 			const iscensored = $(this).find('[alt="Copywrite"], [alt="Censorship"]').length;
@@ -355,29 +380,21 @@ class JV {
 				$this.unlock.push(post.post_id);
 			}
 		});
-
-
-		// disallow for some pages types
-		if (!$this.options.ignore_url.includes($this.url[1])) {
-			// translucent animation
-			if (posts.length) {
-				$('#content').css('opacity', $this.options.opacity);
-			}
-
-			// to check visited
-			engine.runtime.sendMessage({action: 'check', data: check});
-
-		} else {
-			// if no need to hide visited - launch to unlock censored
-			if ($this.unlock.length)
-				engine.runtime.sendMessage({action: 'unlock', data: $this.unlock});
+		
+		// translucent animation
+		if (posts.length) {
+			$('#content').css('opacity', $this.options.opacity);
 		}
+
+		// to check visited
+		engine.runtime.sendMessage({action: 'check', data: check});
 	}
 	postData(item) {
 		const $this = this;
 
 		const post_id = item.attr('id').match(/([0-9]+)$/)[1];
 
+		// if quick download enabled - make button
 		if ($this.options.download == 'enabled')
 			item.find('.share_buttons').prepend('<a data-action="download" title="Скачать все картинки из поста"></a>');
 
@@ -388,19 +405,20 @@ class JV {
 			exceptions = $this.options.tags;
 		}
 		// exceptions only on tags/fandoms
-		if ($this.options.exceptions == 'tag' && $('#tagArticle').length) {
+		if ($this.options.exceptions == 'tag' && ($this.url[1] == 'tag' || window.location.hostname.match(/^(.*?)\.reactor.*/))) {
 			exceptions = $this.options.tags;
 		}
 		// exceptions not in tags/fandoms
-		if ($this.options.exceptions == 'notag' && !$('#tagArticle').length) {
+		if ($this.options.exceptions == 'notag' && !($this.url[1] == 'tag' || window.location.hostname.match(/^(.*?)\.reactor.*/))) {
 			exceptions = $this.options.tags;
 		}
 
+		// tags list
 		const tags = item.find('.taglist a');
 
-		// tags ignore
 		for (const tag of tags) {
 			const name = $(tag).text();
+			// tag mark
 			if ($this.options.tag_mark == 'enabled') {
 				if (Object.values($this.tags.subscribed).find(function(e) { return e.includes(name); }))
 					$(tag).addClass('subscribed');
@@ -408,6 +426,7 @@ class JV {
 					$(tag).addClass('blocked');
 			}
 
+			// tags ignore
 			if (exceptions.length) {
 				if (exceptions.includes(name.toLowerCase())) {
 					return {post_id: post_id, check: false};
@@ -415,10 +434,12 @@ class JV {
 			}
 		}
 
-		if ($this.options.page_action == 'tag' && !$('#tagArticle').length) {
+		// disable if post action on tag page, but this is non tag/fandom page
+		if ($this.options.page_action == 'tag' && !($this.url[1] == 'tag' || window.location.hostname.match(/^(.*?)\.reactor.*/))) {
 			return {post_id: post_id, check: false};
 		}
-		if ($this.options.page_action == 'notag' && $('#tagArticle').length) {
+		// disable if post action on non tag page, but this is tag/fandom page
+		if ($this.options.page_action == 'notag' && ($this.url[1] == 'tag' || window.location.hostname.match(/^(.*?)\.reactor.*/))) {
 			return {post_id: post_id, check: false};
 		}
 
@@ -427,19 +448,31 @@ class JV {
 	check(data) {
 		const $this = this;
 
-		// all recived data - visited
-		for (const [post_id, visited] of Object.entries(data)) {
+		// if post page - mark post as viewed
+		if ($this.url[1] == 'post')
+			engine.runtime.sendMessage({action: 'mark', data: $this.url[2]});
 
-			// remove from visited hendler
-			delete $this.posts[post_id];
-			// if visited - remove from list to unlock censored
-			delete $this.unlock[post_id];
+		for (const [post_id, visited] of Object.entries(data)) {
 
 			const post = $(`#postContainer${post_id}`);
 
 			// add info date visited
 			post.find('.uhead_nick').append($('#JV_visited').Container([visited], true));
 
+			// disallow if no action on posts, extension disabled or page ignored
+			if ($this.options.post == 'none' || !$this.status || $this.options.ignore_url.includes($this.url[1]))
+				continue;
+
+			// if post is an exception
+			if (post.hasClass('JV_exception'))
+				continue;
+
+			// remove from visited hendler
+			delete $this.posts[post_id];
+			// if visited - remove from list to unlock censored
+			delete $this.unlock[post_id];
+
+			// post actions
 			switch ($this.options.post) {
 				case 'hide':
 					post.remove();
@@ -455,14 +488,6 @@ class JV {
 					post.css('opacity', $this.options.opacity);
 					break;
 			}
-
-			// return to defaults on click
-			post.on('click', function() {
-				$(this).removeClass('JV_title');
-				$(this).css('opacity', 1);
-				$(this).find('.post_content').css('max-height', '100%');
-				$(this).find('.post_content_expand').css('display', 'none');
-			});
 		}
 
 		// auto step to next page
@@ -485,12 +510,30 @@ class JV {
 			}
 		}
 
-		// if pager allowed and next page exists 
+		// block tag loop
+		if (document.referrer) {
+			let referrerURL = new URL(document.referrer);
+			let referrer = referrerURL.pathname.split('/');
+			let num = parseInt(referrer[3]);
+			referrer.splice(3, 1);
+			referrer = decodeURI(referrerURL.origin+referrer.join('/'));
+
+			let currentURL = document.location;
+			let cpath = currentURL.pathname.split('/');
+			cpath.splice(3, 1);
+			cpath = decodeURI(currentURL.origin+cpath.join('/'));
+
+			// if the links are same
+			// but current page num - undefined
+			// and referrer page number - is numeric
+			// this is tag loop - disable pager
+			if (referrer === cpath && $this.url[3] === undefined && typeof num == 'number' && !isNaN(num))
+				pager = false;
+		}
+
+		// if pager allowed and next page exists
 		if (pager && $('a.next').length) {
-			let num = parseInt(new URL(document.referrer).pathname.split('/')[3]);
-			if (!($this.url[3] === undefined && typeof num == 'number' && !isNaN(num))) {
-				$('a.next')[0].click();
-			}
+			$('a.next')[0].click();
 		} else { // else - remove translucent
 			$('#content').css('opacity', 1);
 
@@ -502,6 +545,7 @@ class JV {
 	async unlockExec(data) {
 		const $this = this;
 
+		// get votes info
 		let info = {posts: {}};
 		let postIds = [];
 		for (const [post_id, item] of Object.entries(data)) {
@@ -519,9 +563,9 @@ class JV {
 			// if censored - rebuild comments
 			post.find('.toggleComments').removeClass('toggleComments').addClass('JV_toggleComments');
 
-			if (['post'].includes($this.url[1])) {
+			// if this is post page - instant load comments
+			if ($this.url[1] == 'post')
 				post.find('.JV_toggleComments').click();
-			}
 
 			// rebuild votes and get commentnumDelta
 			if (post_id in info) {
@@ -551,9 +595,9 @@ class JV {
 
 			// post content
 			const data = $this.setAttributes(item);
-			if (['post'].includes($this.url[1])) {
+			// if this is post page - show all content
+			if ($this.url[1] == 'post')
 				data[0].classList.add('allow_long');
-			}
 
 			post.find('[alt="Copywrite"], [alt="Censorship"]').replaceWith(data[0], data[1]);
 		}
@@ -1069,9 +1113,11 @@ class JV {
 				},
 				body: JSON.stringify({query: params})
 			}).then(response => response.json()).then(function(response) {
+				// rebuild comments form
 				comments.html($('#JV_comments').Container([{
 					post_id: post_id, 
-					user: {id: atob(response.data.node.user.id).match(/([0-9]+)/)[1]}
+					user: {id: atob(response.data.node.user.id).match(/([0-9]+)/)[1]},
+					user_id: $this.user_id
 				}], true));
 
 				const viewed = Math.floor(new Date(response.data.node.viewedCommentsAt).getTime() / 1000);
@@ -1115,7 +1161,7 @@ class JV {
 				var event = document.createEvent('HTMLEvents');
 				event.initEvent('DOMUpdate', true, true);
 				event.eventName = 'DOMUpdate';
-				document.dispatchEvent(event);
+				comments[0].dispatchEvent(event);
 
 				resolve();
 			});
@@ -1136,14 +1182,17 @@ class JV {
 		let items = {};
 		const content = button.parents('.postContainer').find('.post_content');
 
+		// find images
 		$.each(content.find('img'), function() {
 			const image_id = $(this).attr('src').match(/([0-9]+)\.[a-z]+$/)[1];
 			items[image_id] = window.location.protocol+$(this).attr('src');
 		});
+		// find full links. if exists - replace
 		$.each(content.find('a.prettyPhotoLink, a.video_gif_source'), function() {
 			const image_id = $(this).attr('href').match(/([0-9]+)\.[a-z]+$/)[1];
 			items[image_id] = window.location.protocol+$(this).attr('href');
 		});
+
 		for (const url of Object.values(items)) {
 			const filename = decodeURI(new URL(url).pathname.split('/').pop());
 			fetch(url).then(function(response) { 

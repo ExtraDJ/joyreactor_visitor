@@ -40,6 +40,7 @@ function depthTitle(value) {
 
 	return title;
 }
+
 // document loaded
 document.addEventListener('DOMContentLoaded', async function() {
 	// firefox range input
@@ -183,11 +184,11 @@ document.addEventListener('DOMContentLoaded', async function() {
 		// save
 		await engine.storage.sync.set({options: options});
 	});
-
-	// flush all
-	document.getElementById('flush').addEventListener('click', async function() {
-		if (confirm('Вы уверены что хотите очистить историю просмотра?')) {
-			engine.storage.local.clear();
+	document.getElementById('options').addEventListener('click', async function() {
+		if (confirm('Вы уверены что хотите сбросить настройки?')) {
+			engine.storage.sync.clear(function() {
+				window.location.reload();
+			});
 		}
 	});
 	// flush cache
@@ -209,8 +210,21 @@ document.addEventListener('DOMContentLoaded', async function() {
 						added: data[post_id].added
 					}
 				}
-				engine.storage.local.remove(remove);
-				engine.storage.local.set(update);
+				engine.storage.local.remove(remove, function() {
+					engine.storage.local.set(update, function() {
+						window.location.reload();
+					});
+				});
+			});
+		}
+	});
+	// flush all
+	document.getElementById('flush').addEventListener('click', async function() {
+		if (confirm('Вы уверены что хотите очистить историю просмотра?')) {
+			engine.storage.local.clear(function() {
+				engine.storage.sync.clear(function() {
+					window.location.reload();
+				});
 			});
 		}
 	});

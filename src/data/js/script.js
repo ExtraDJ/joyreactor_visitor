@@ -48,15 +48,10 @@ class JV {
 					engine.tabs.sendMessage(sender.tab.id, {action: 'me', data: await $this.me(request.data)});
 					break;
 				case 'options': // send extension options
-					engine.tabs.sendMessage(sender.tab.id, {action: 'options', data: $this.options});
+					engine.tabs.sendMessage(sender.tab.id, {action: 'options', data: $this.options, status: await $this.getStatus()});
 					break;
 				case 'check': // check posts in storage
-					// if extension disabled or no action on visited posts
-					if ($this.options.post == 'none' || !await $this.getStatus()) {
-						engine.tabs.sendMessage(sender.tab.id, {action: 'check', data: []});
-					} else {
-						engine.tabs.sendMessage(sender.tab.id, {action: 'check', data: await $this.check(request.data)});
-					}
+					engine.tabs.sendMessage(sender.tab.id, {action: 'check', data: await $this.check(request.data)});
 					break;
 				case 'unlock': // unlock censored
 					engine.tabs.sendMessage(sender.tab.id, {action: 'unlock', data: await $this.unlock(request.data)});
@@ -397,6 +392,7 @@ class JV {
 
 		let path = '..';
 		if (is_firefox()) { path = 'data'; }
+		
 		if (status) {
 			engine.action.setIcon({path: `${path}/images/enabled.png`});
 		} else {

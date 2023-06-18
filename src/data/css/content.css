@@ -31,7 +31,6 @@
 	max-height: 2000px !important;
 }
 [alt="Copywrite"],
-a.delete.hide,
 .blog_avatar.hide {
 	display: none !important;
 }
@@ -70,4 +69,8 @@ div.JV_visited:hover {
 }
 div.JV_visited > span {
 	display: block;
+}
+.add-comment-link[data-user_id="null"],
+.addcomment[data-user_id="null"] {
+	display: none !important;
 }

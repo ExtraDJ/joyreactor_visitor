@@ -147,10 +147,10 @@
 	</template>
 	<template id="JV_comments">
 		<div class="comment_list_post" id="comment_list_post_{{~item~.post_id}}" creatorid="{{~item~.user.id}}"></div>
-		<div class="add-comment-link" data-post-id="{{~item~.post_id}}">
+		<div class="add-comment-link" data-post-id="{{~item~.post_id}}" data-user_id="{{~item~.user_id}}">
 			<a class="response" href="javascript:">Написать комментарий</a>
 		</div>
-		<div id="addcomment_post_{{~item~.post_id}}" class="addcomment" style="display: block;">
+		<div id="addcomment_post_{{~item~.post_id}}" class="addcomment" style="display: block;" data-user_id="{{~item~.user_id}}">
 			<form action="/post_comment/create" method="post" enctype="multipart/form-data" class="post_comment_form">
 				<div class="add_comment_flash" style="display:none"></div>
 				<input type="hidden" class="parent_id" value="0" name="parent_id">
