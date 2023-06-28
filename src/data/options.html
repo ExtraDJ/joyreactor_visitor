@@ -5,6 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<title>JoyReactor Visitor Options</title>
 	<link href="css/options.css" rel="stylesheet">
+	<script type="module" src="js/jquery.js"></script>
 	<script type="module" src="js/options.js"></script>
 </head>
 
@@ -69,80 +70,21 @@
 		<form>
 			<div>
 				<div>
-					<span>Импорт/Экспорт</span>
-					<span class="help">Вы можете экспортировать список просмотренных постов для восстановления в случае необходимости. Это может быть полезно перед переустановкой операционной системы</span>
+					<span>Импорт/Экспорт/Синхронизация</span>
+					<span class="help">Вы можете экспортировать список просмотренных постов для восстановления в случае необходимости. Это может быть полезно перед переустановкой операционной системы. Так же вы можете ввести пароль, и ваша история будет синхронизирована с облаком. После того  как пароль задан его изменять нельзя, потому как вероятна потеря история синхронизации</span>
 				</div>
 				<div>
 					<input type="file" id="import" name="import">
 					<label for="import">Импорт</label>
 					<button type="button" id="export">Экспорт</button>
+					<input type="text" name="sync_key" placeholder="Пароль для синхронизации" />
+					<button type="button" id="sync_get">Загрузить настройки с облака</button>
+					<button type="button" id="sync_set">Сохранить настройки в облако</button>
 				</div>
 			</div>
 			<div>
 				<div>
-					<span>Исключить теги</span>
-					<span class="help">Укажите через запятую важные вам теги. Посты с этими тегами не будут скрываться</span>
-				</div>
-				<div>
-					<textarea name="tags" rows="3" placeholder="anon, реактор, dev"></textarea>
-				</div>
-			</div>
-			<div>
-				<div>
-					<span>Метод исключения</span>
-					<span class="help">Вы можете выбрать, где будут игнорироваться посты с введенными тегами</span>
-				</div>
-				<div>
-					<input type="radio" name="exceptions" id="exceptions-1" value="all">
-					<label for="exceptions-1">Игнорировать везде</label>
-					<input type="radio" name="exceptions" id="exceptions-2" value="tag">
-					<label for="exceptions-2">Только при просмотре фэндомов/тегов</label>
-					<input type="radio" name="exceptions" id="exceptions-3" value="notag">
-					<label for="exceptions-3">Только при просмотре вне фэндомов/тегов</label>
-				</div>
-			</div>
-			<div>
-				<div>
-					<span>Переключать страницы</span>
-					<span class="help">Выберите более удобный для вас алгоритм действий, когда все посты на странице уже просмотрены</span>
-				</div>
-				<div>
-					<input type="radio" name="pager" id="pager-1" value="withoutfirst">
-					<label for="pager-1">Переключить на следующую, если это не первая</label>
-					<input type="radio" name="pager" id="pager-2" value="all">
-					<label for="pager-2">Переключить на следующую в любом случаи</label>
-					<input type="radio" name="pager" id="pager-3" value="disable">
-					<label for="pager-3">Отключить автоматический переход</label>
-				</div>
-			</div>
-			<div>
-				<div>
-					<span>Маркировка тегов</span>
-					<span class="help">Вы можете включить/выключить маркировку тегов в посте. Если вы подписаны на тег - будет зеленая звездочка справа. Если тег у вас заблокирован - красный квадрат справа</span>
-				</div>
-				<div>
-					<input type="radio" name="tag_mark" id="tag_mark-1" value="enabled">
-					<label for="tag_mark-1">Включено</label>
-					<input type="radio" name="tag_mark" id="tag_mark-2" value="disabled">
-					<label for="tag_mark-2">Выключено</label>
-				</div>
-			</div>
-			<div>
-				<div>
-					<span>Быстрое скачивание</span>
-					<span class="help">Вы можете включить/выключить кнопку быстрого скачивания картинок из поста. Также вы можете указать дочернюю папку в загрузках для скачивания</span>
-				</div>
-				<div>
-					<input type="radio" name="download" id="download-1" value="enabled">
-					<label for="download-1">Включено</label>
-					<input type="radio" name="download" id="download-2" value="disabled">
-					<label for="download-2">Выключено</label>
-					<input type="text" name="download_folder" />
-				</div>
-			</div>
-			<div>
-				<div>
-					<span>Игнорировать страниц</span>
+					<span>Исключить страниц</span>
 					<span class="help">Вы можете указать на каких типах страницах не делать ничего с просмотренными постами. Разделить запятой<br>
 					Что такое тип страницы:
 					https://joyreactor.cc/<b>discussion</b>/my
@@ -151,7 +93,72 @@
 					</span>
 				</div>
 				<div>
-					<input type="text" name="ignore_url" />
+					<input type="text" name="extension_ignore_url" placeholder="post, user, discussion, people" />
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Исключить теги</span>
+					<span class="help">Укажите через запятую важные вам теги. Посты с этими тегами не будут скрываться</span>
+				</div>
+				<div>
+					<textarea name="tags_list" rows="3" placeholder="anon, реактор, dev"></textarea>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Метод исключения</span>
+					<span class="help">Вы можете выбрать, где будут игнорироваться посты с введенными тегами</span>
+				</div>
+				<div>
+					<input type="radio" name="tags_exceptions_page" id="tags_exceptions_page-1" value="all">
+					<label for="tags_exceptions_page-1">Игнорировать везде</label>
+					<input type="radio" name="tags_exceptions_page" id="tags_exceptions_page-2" value="tag">
+					<label for="tags_exceptions_page-2">Только при просмотре фэндомов/тегов</label>
+					<input type="radio" name="tags_exceptions_page" id="tags_exceptions_page-3" value="notag">
+					<label for="tags_exceptions_page-3">Только при просмотре вне фэндомов/тегов</label>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Маркировка тегов</span>
+					<span class="help">Вы можете включить/выключить маркировку тегов в посте. Если вы подписаны на тег - будет зеленая звездочка справа. Если тег у вас заблокирован - красный квадрат справа</span>
+				</div>
+				<div>
+					<input type="radio" name="post_tags_mark" id="post_tags_mark-1" value="1">
+					<label for="post_tags_mark-1">Включено</label>
+					<input type="radio" name="post_tags_mark" id="post_tags_mark-2" value="0">
+					<label for="post_tags_mark-2">Выключено</label>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Переключать страницы</span>
+					<span class="help">Выберите более удобный для вас алгоритм действий, когда все посты на странице уже просмотрены</span>
+				</div>
+				<div>
+					<input type="radio" name="post_pager" id="post_pager-1" value="withoutfirst">
+					<label for="post_pager-1">Переключить на следующую, если это не первая</label>
+					<input type="radio" name="post_pager" id="post_pager-2" value="all">
+					<label for="post_pager-2">Переключить на следующую в любом случаи</label>
+					<input type="radio" name="post_pager" id="post_pager-3" value="none">
+					<label for="post_pager-3">Отключить автоматический переход</label>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Быстрое скачивание</span>
+					<span class="help">Вы можете включить/выключить кнопку быстрого скачивания картинок из поста. Также вы можете указать дочернюю папку в загрузках для скачивания и префикс файла</span>
+				</div>
+				<div>
+					<input type="radio" name="download_status" id="download_status-1" value="1">
+					<label for="download_status-1">Включено</label>
+					<input type="radio" name="download_status" id="download_status-2" value="0">
+					<label for="download_status-2">Выключено</label>
+					<label for="download_folder">Доченяя папка</label>
+					<input type="text" name="download_folder" id="download_folder" placeholder="Доченяя папка" />
+					<label for="download_prefix">Префикс файла</label>
+					<input type="text" name="download_prefix" id="download_prefix" placeholder="Префикс файла" />
 				</div>
 			</div>
 			<div>
@@ -160,12 +167,24 @@
 					<span class="help">Вы можете выбрать типы страниц на которых можно изменять просмотренные посты</span>
 				</div>
 				<div>
-					<input type="radio" name="page_action" id="page_action-1" value="all">
-					<label for="page_action-1">Все</label>
-					<input type="radio" name="page_action" id="page_action-2" value="tag">
-					<label for="page_action-2">Только при просмотре фэндомов/тегов</label>
-					<input type="radio" name="page_action" id="page_action-3" value="notag">
-					<label for="page_action-3">Только при просмотре вне фэндомов/тегов</label>
+					<input type="radio" name="post_pages_action" id="post_pages_action-1" value="all">
+					<label for="post_pages_action-1">Все</label>
+					<input type="radio" name="post_pages_action" id="post_pages_action-2" value="tag">
+					<label for="post_pages_action-2">Только при просмотре фэндомов/тегов</label>
+					<input type="radio" name="post_pages_action" id="post_pages_action-3" value="notag">
+					<label for="post_pages_action-3">Только при просмотре вне фэндомов/тегов</label>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Визуальная индикация</span>
+					<span class="help">При прокрутке ленты посты которые только что были отмечены как прочитанные, будут временно подсвечиваться зеленым. Если вам это не нужно - можете отключить</span>
+				</div>
+				<div>
+					<input type="radio" name="post_visual_mark" id="post_visual_mark-1" value="1">
+					<label for="post_visual_mark-1">Включено</label>
+					<input type="radio" name="post_visual_mark" id="post_visual_mark-2" value="0">
+					<label for="post_visual_mark-2">Выключено</label>
 				</div>
 			</div>
 			<div>
@@ -174,26 +193,50 @@
 					<span class="help">Выберите более удобный для вас алгоритм действий с уже просмотренными постами</span>
 				</div>
 				<div>
-					<input type="radio" name="post" id="post-0" value="none">
-					<label for="post-0">Ничего не делать</label>
-					<input type="radio" name="post" id="post-1" value="hide">
-					<label for="post-1">Полностью скрыть</label>
-					<input type="radio" name="post" id="post-2" value="translucent">
-					<label for="post-2">Сделать полупрозрачным</label>
-					<input type="radio" name="post" id="post-3" value="title">
-					<label for="post-3">Заголовок + элементы управления. Кнопка комментариев, рейтинга и т.д.</label>
-					<input type="radio" name="post" id="post-4" value="title_translucent">
-					<label for="post-4">Заголовок + элементы управления. Полупрозрачный</label>
+					<input type="radio" name="post_action" id="post_action-0" value="none">
+					<label for="post_action-0">Ничего не делать</label>
+					<input type="radio" name="post_action" id="post_action-1" value="hide">
+					<label for="post_action-1">Полностью скрыть</label>
+					<input type="radio" name="post_action" id="post_action-2" value="translucent">
+					<label for="post_action-2">Сделать полупрозрачным</label>
+					<input type="radio" name="post_action" id="post_action-3" value="title">
+					<label for="post_action-3">Заголовок + элементы управления. Кнопка комментариев, рейтинга и т.д.</label>
+					<input type="radio" name="post_action" id="post_action-4" value="title_translucent">
+					<label for="post_action-4">Заголовок + элементы управления. Полупрозрачный</label>
 				</div>
 			</div>
-			<div id="opacity" class="hide">
+			<div>
+				<div>
+					<span>Новые комментарии</span>
+					<span class="help">Вы можете отключить изменение просмотренных постов, если в них есть новые комментарии</span>
+				</div>
+				<div>
+					<input type="radio" name="post_action_unread" id="post_action_unread-1" value="1">
+					<label for="post_action_unread-1">Включено</label>
+					<input type="radio" name="post_action_unread" id="post_action_unread-2" value="0">
+					<label for="post_action_unread-2">Выключено</label>
+				</div>
+			</div>
+			<div id="post_opacity" class="hide">
 				<div>
 					<span>Прозрачность</span>
 					<span class="help">Вы можете отрегулировать степень прозрачности просмотренных постов</span>
 				</div>
 				<div>
-					<input name="opacity" type="range" min="0" max="100" step="5" />
+					<input name="post_opacity" type="range" min="0" max="100" step="5" />
 					<span></span>
+				</div>
+			</div>
+			<div>
+				<div>
+					<span>Когда был просмотрен пост</span>
+					<span class="help">Вы можете включить/отключить информацию о том, когда вы просматривали пост</span>
+				</div>
+				<div>
+					<input type="radio" name="post_visited_date" id="post_visited_date-1" value="1">
+					<label for="post_visited_date-1">Включено</label>
+					<input type="radio" name="post_visited_date" id="post_visited_date-2" value="0">
+					<label for="post_visited_date-2">Выключено</label>
 				</div>
 			</div>
 			<div>
@@ -202,7 +245,7 @@
 					<span class="help">Как далеко заглядывать в историю при проверке постов</span>
 				</div>
 				<div>
-					<input name="depth" type="range" min="0" max="5" step="1" />
+					<input name="extension_depth" type="range" min="0" max="5" step="1" />
 					<span></span>
 				</div>
 			</div>
@@ -212,9 +255,10 @@
 					<span class="help">Если после обновления расширения оно не работает, или ведет себя странно - рекомендуется сбросить настройки. Если по каким либо причинам вам хочется сбросить историю просмотра - вы можете нажать на соответствующую кнопку. Очистка кеша позволяет удалить кеш заблокированных постов. Рекомендуется использовать только в случаях перебоев в работе реактора</span>
 				</div>
 				<div>
-					<button type="button" id="options">Сбросить настройки</button>
-					<button type="button" id="flush">Очистить историю</button>
+					<button type="button" id="reset">Сбросить настройки</button>
+					<button type="button" id="clear">Очистить историю</button>
 					<button type="button" id="cache">Очистить кеш</button>
+					<button type="button" id="clearall">Удалить нахуй все</button>
 				</div>
 			</div>
 		</form>

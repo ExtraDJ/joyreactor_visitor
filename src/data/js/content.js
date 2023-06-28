@@ -1,12 +1,15 @@
-const getEngine = function() {
-	if (typeof browser !== 'undefined') { return browser; }
+const engine = (function() {
+	if (typeof browser !== 'undefined') {
+		return browser;
+	}
 	return chrome;
-}
-const engine = getEngine();
+})();
+
+var $this;
 
 $.fn.Container = function(data, html) {
 	if (html === undefined) {
-		html = false;
+		html = true;
 	}
 	var response = '';
 
@@ -36,7 +39,7 @@ $.fn.Container = function(data, html) {
 	return $(this);
 }
 function makeNode(template, key, collection) {
-	const regex = /{{\s*([~\w\.\[\]]+)\s*}}/gm;
+	const regex = /{{\s*([~\w\.\[\]\-]+)\s*}}/gm;
 	template = template.replace(regex, function(str, varname) {	
 		const varpath = varname.split('.');
 		let fixed = getData(varpath, key, collection);
@@ -103,7 +106,7 @@ function getData(path, key, collection, level) {
 					if (typeof collection[path[level]] == 'object') {
 						if (Object.keys(collection[path[level]]).length) {
 							var tp_level = level;
-							collection = $('#'+path[++tp_level]).Container(collection[path[level]], true);
+							collection = $('#'+path[++tp_level]).Container(collection[path[level]]);
 							return collection;
 						}
 					} else {
@@ -123,158 +126,198 @@ function getData(path, key, collection, level) {
 
 class JV {
 	constructor() {
-		this.posts = {};
-		this.unlock = [];
-		this.options = {};
-		this.status;
+		$this = this;
+
 		this.url = window.location.pathname.split('/');
 
-		this.user_id = null;
-		this.server_time;
-		this.tags = {
-			subscribed: {},
-			blocked: {}
-		}
+		this.vars = {
+			status: true,
+			options: {},
+			user: {}
+		};
+		this.lists = {
+			posts: {},
+			unlock: [],
+			viewed: {}
+		};
 	}
 	async init() {
-		const $this = this;
+		// load templates. on load - we a ready
+		$this.templates(function() {
+			// messages handler
+			$this.handler();
 
-		$this.loadTemplates();
-		$this.handler();
-
-		/*
-		* steps to exec
-		* 1. send server time to service_worker
-		* 2. get cached personal info from service_worker
-		* 3. if no cache - get it and send to service_worker, then cached
-		* 4. get extension options
-		* 5. check, this is redirected from tagpage
-		* 6. rebuild tagpage (optional)
-		* 7. find all posts to check visited, list of posts to unlock -> mark tags, download button, exceptions
-		* 8. unlock posts
-		* 9. ????
-		* 10. will fuck a duck
-		*/
-
-		// do not run if image
-		// or user comments page
-		if (!['pics', 'images'].includes($this.url[1]) && !['comments'].includes($this.url[3])) {
-			// get and set server time
-			$this.server_time = parseInt(document.documentElement.outerHTML.match(/server_time = ([0-9]+);/)[1]);
-			engine.runtime.sendMessage({action: 'time', data: $this.server_time});
-
-			// get user_id and subscribed/blocked tags
-			engine.runtime.sendMessage({action: 'me'});
-		}
+			// do not run if image
+			// or user child pages
+			if (!['pics', 'images'].includes($this.url[1]) && !['comments', 'friends', 'infriends', 'blocks'].includes($this.url[3])) {
+				engine.runtime.connect();
+			}
+		});
 	}
 	handler() {
-		const $this = this;
-
 		engine.runtime.onMessage.addListener(async function(request) {
-			switch (request.action) {
-				case 'me': // cached user data
-					if (await $this.me(request.data)) {
-						engine.runtime.sendMessage({action: 'options'});
-					}
+			switch (request.method) {
+				case 'token':
+					engine.runtime.sendMessage({method: 'token', action: 'set', data: await $this.token()});
 					break;
 				case 'options': // received options
-					// save options
-					$this.options = request.data;
-					// save extension status enabled/disabled
-					$this.status = request.status;
+					$this.vars = request;
+
+					// we are ready to user actions
+					$this.userHandler();
+
 					// if this is redirected
 					if (window.location.href.includes('JV=tag')) {
-						engine.runtime.sendMessage({action: 'tag', url: document.referrer});
+						// try tag
+						engine.runtime.sendMessage({method: 'tag', action: 'get', referrer: document.referrer});
 					} else {
 						// this is normal page
-						$this.postsExec();
+						$this.posts.get();
 					}
 					break;
-				case 'check': // we received visited posts
-					$this.check(request.data);
+				case 'tag':
+					switch (request.action) {
+						case 'set': // unlock tag page 
+							$this.tag.set(request, function() {
+								$this.posts.get();
+							});
+							break;
+					}
 					break;
-				case 'unlock': // unlock posts
-					$this.unlockExec(request.data);
+				case 'posts':
+					switch (request.action) {
+						case 'set': // set visited
+							$this.posts.set(request.data, function() {
+								if ($this.vars.options.post_action_unread || $this.lists.unlock.length) {
+									engine.runtime.sendMessage({method: 'posts', action: 'unlock', data: $this.lists.unlock});
+								} else {
+									$this.posts.pager();
+								}
+							});
+							break;
+						case 'unlock': // unlock censored
+							$this.posts.unlock(request.data);
+							break;
+						case 'viewed': // post successfully marked as visited
+							$this.posts.viewed(request.data);
+							break;
+					}
 					break;
-				case 'tag': // unlock tag page 
-					$this.tag(request);
+				case 'comments':
+					switch (request.action) {
+						case 'set':
+							$this.comments.set(request.data);
+							break;
+					}
 					break;
-				case 'reload': // if settings changed - reload page
+				case 'reload': // if optins changed - reload page
 					window.location.reload();
 					break;
 			}
 			return true;
 		});
-	
-		// scroll visitor handler
-		$(window).on('scroll', function() {
-			if ($(window).scrollTop() < 200)
-				return false;
+	}
+	userHandler() {
+		$('#submenu').append('<span data-action="options" class="big_button" title="Настройки"></span>');
+		// login, logout - reset token
+		$(document).on('click', '#logout, input[value="Войти"]', function() {
+			engine.runtime.sendMessage({method: 'token', action: 'del'});
+		});
 
-			// check all posts
-			for (const [post_id, item] of Object.entries($this.posts)) {
-				// if the block is fully visible on screen				
-				if ((item.offset().top + item.height()) < ($(window).height() + $(window).scrollTop())) {
-					// mark post as viewed
-					engine.runtime.sendMessage({action: 'mark', data: post_id});
-					// kick from exec
-					delete $this.posts[post_id];
+		// tag subscribe/unsubscribe/block - clear user data
+		$(document).on('click', '.change_favorite_link', function() {
+			engine.runtime.sendMessage({action: 'user', data: 'del'});
+		});
+
+		// tag subscribe/unsubscribe/block. only for censored tags
+		$(document).on('click', '[data-tag_id]', function() {
+			$this.tag.state($(this).attr('data-tag_id'), $(this).parent().attr('class'));
+		});
+
+		// scroll visitor handler
+		if ($this.url[1] !== 'post') {
+			$(window).on('scroll', function() {
+				if ($(window).scrollTop() < 100)
+					return false;
+				// check all posts
+				for (const [post_id, item] of Object.entries($this.lists.posts)) {
+					// if the block is fully visible on screen				
+					if ((item.offset().top + item.height()) < ($(window).height() + $(window).scrollTop()) && !(post_id in $this.lists.viewed)) {
+						// да, это ебучий костыль, что бы оно не срало 10 запросов за один скролл
+						// потому закидываем во временный список, и ждем ответа от фонового скрипта, который уже точно подвердит что пост сохранен
+						// если нет ответа в указанное время - снова делаем его живим. на это даеться всего 100ms
+						// варианта лучше я не придумал
+						// (凸ಠ益ಠ)凸
+						$this.lists.viewed[post_id] = post_id;
+						setTimeout(function() {
+							delete $this.lists.viewed[post_id];
+						}, 100);
+
+						// mark post as visited
+						engine.runtime.sendMessage({method: 'posts', action: 'set', data: post_id});
+					}
 				}
+			});
+		}
+		// mark post as visited when click link/vote
+		// if this is download button - load all post content
+		$(document).on('click', '.postContainer a, .postContainer .vote-plus, .postContainer .vote-minus, .postContainer [data-action]', function() {
+			const post_id = $(this).parents('.postContainer').attr('id').match(/([0-9]+)$/)[1];
+			if ($(this).attr('data-action') == 'download') {
+				$this.download($(this));
+			}
+			if (post_id in $this.lists.posts) {
+				engine.runtime.sendMessage({method: 'posts', action: 'set', data: post_id});
+				delete $this.lists.posts[post_id];
 			}
 		});
+		$(document).on('click', '#submenu > [data-action]', function() {
+			switch($(this).attr('data-action')) {
+				case 'download':
+					$('.postContainer [data-action="download"]').each(function() {
+						$(this).click();
+					});
+					break;
+				case 'options':
+					engine.runtime.sendMessage({method: 'options', action: 'page'});
+					break;
+			}
 
+		});
 		// return to default when clicking on a post
 		$(document).on('click', '.postContainer', function() {
-			$(this).removeClass('JV_title');
-			$(this).css('opacity', 1);
-			$(this).find('.post_content').css('max-height', '100%');
-			$(this).find('.post_content_expand').css('display', 'none');
-		});
-		// mark on click link/vote
-		$(document).on('click', '.postContainer a, .postContainer .vote-plus, .postContainer .vote-minus', function() {
-			const post_id = $(this).parents('.postContainer').attr('id').match(/([0-9]+)$/)[1];
-			engine.runtime.sendMessage({action: 'mark', data: post_id});
-		});
-		// download all post content
-		$(document).on('click', '[data-action="download"]', function() {
-			$this.download($(this));
-		});
-		// tag subscribe/unsubscribe/block
-		$(document).on('click', '[data-tag_id]', function(event) {
-			event.preventDefault();
-			$this.changeTagState($(this));
+			if ($(this).hasClass('JV_title')) {
+				$(this).removeClass('JV_title');
+				$(this).css('opacity', 1);
+			}
 		});
 		// get comments list
 		$(document).on('click', '.JV_toggleComments', async function(event) {
 			event.preventDefault();
 
-			const post_id = $(this).attr('href').match(/([0-9]+)/)[1];
-			const comments = $(`#postContainer${post_id}`).find('.post_comment_list');
+			const post_id = $(this).parents('.postContainer').attr('id').match(/([0-9]+)$/)[1];
 
 			if ($(this).hasClass('comOpened')) {
-				comments.css('display', 'none');
 				$(this).removeClass('comOpened');
+				$(`#postContainer${post_id} .post_comment_list`).css('display', 'none');
 				return false;
-			}
-
-			await $this.getComments(post_id);
-			comments.css('display', 'block');
-			$(this).addClass('comOpened');
+			} else {
+				$(this).addClass('comOpened');
+				engine.runtime.sendMessage({method: 'comments', action: 'get', data: post_id});
+				return true;
+			}			
 		});
 		// send comment
 		$(document).on('click', '.JV_submit', function() {
-			$this.sendComment(new FormData($(this).parent('form')[0]))
-		});
-		// tag subscribe/unsubscribe/block, login, logout - flush cache
-		$(document).on('click', '.change_favorite_link, #logout, input[value="Войти"]', function() {
-			engine.runtime.sendMessage({action: 'me', data: 'flush'});
+			$this.comments.add(new FormData($(this).parent('form')[0]))
 		});
 		// shortcut download
 		$(document).on('keydown', function(event) {
+			// Ctrl + Shift + S
 			if (event.keyCode == 83 && event.ctrlKey && event.shiftKey) {
-				let button;
+				let target;
 				if ($this.url[1] == 'post') {
-					button = $('[data-action="download"]');
+					target = $('[data-action="download"]');
 				} else {
 					let minDistance = 50000;
 
@@ -283,899 +326,675 @@ class JV {
 						let distance = Math.abs(($(this).offset().top + $(this).height()) - (($(window).height() / 2) + $(window).scrollTop()));
 						if (minDistance > distance && $(window).scrollTop() < $(this).offset().top) {
 							minDistance = distance;
-							button = $(this);
+							target = $(this);
 						}
 					});
 				}
-				button.click();
+
+				target.click();
 			}
 		});
 	}
-	loadTemplates() {
-		fetch(engine.runtime.getURL('data/templates.html'), {}).then(response => response.text()).then(function(response) {
+	templates(callback) {
+		fetch(engine.runtime.getURL('data/templates.html'), {}).then(function(response) {
+			return response.text();
+		}).then(function(response) {
 			document.getElementsByTagName('body')[0].append(new DOMParser().parseFromString(response, 'text/html').getElementsByTagName('templates')[0]);
-		});		
+			callback();
+		});
 	}
-	async me(cache) {
-		const $this = this;
+	async token() {
 		return new Promise(function(resolve) {
-			// if no cache
-			if (typeof cache === 'boolean') {
-				fetch('https://api.joyreactor.cc/graphql', {
-					method: 'POST',
-					credentials: 'include',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({query: `{ me { user { id } blockedTags { id name synonyms } subscribedTags { id name synonyms } } }`})
-				}).then(response => response.json()).then(function(response) {
-					let data = {
-						user_id: null,
-						tags: {
-							blocked: {},
-							subscribed: {}
-						}
-					}
-					// if user logged
-					if (response.data.me !== null) {
-						data = {
-							user_id: atob(response.data.me.user.id).match(/([0-9]+)/)[1],
-							tags: {
-								blocked: {},
-								subscribed: {}
-							}
-						}
-						if (response.data.me !== null) {
-							data.user_id = atob(response.data.me.user.id).match(/([0-9]+)/)[1];
-							for (const item of response.data.me.blockedTags) {
-								data.tags.blocked[atob(item.id).match(/([0-9]+)/)[1]] = `${item.name}, ${item.synonyms}`.split(',').map(function(e) { return e.trim() }).filter(function(e) { return e != ''; });
-							}
-							for (const item of response.data.me.subscribedTags) {
-								data.tags.subscribed[atob(item.id).match(/([0-9]+)/)[1]] = `${item.name}, ${item.synonyms}`.split(',').map(function(e) { return e.trim() }).filter(function(e) { return e != ''; });
-							}
-						}
-					}
-					// to cache
-					engine.runtime.sendMessage({action: 'me', data: data});
-
-					resolve(false);
-				});
-			} else {
-				// from cache
-				$this.user_id = cache.user_id;
-				$this.tags = cache.tags;
-
-				resolve(true);
-			}
-		});
-	}
-	postsExec() {
-		const $this = this;
-
-		// list to check visited
-		const check = [];
-
-		// all posts on page
-		const posts = $('.postContainer');
-
-		$.each(posts, function() {
-
-			// get post_id and options to check
-			const post = $this.postData($(this));
-
-			// if this is exception
-			if (!post.check) {
-				$(this).addClass('JV_exception');
-			}
-
-			// to check
-			check.push(post.post_id);
-			
-			// save globally
-			$this.posts[post.post_id] = $(this).find('.ufoot');
-
-			// post is censored?
-			const iscensored = $(this).find('[alt="Copywrite"], [alt="Censorship"]').length;
-			if (iscensored) {
-				$this.unlock.push(post.post_id);
-			}
-		});
-		
-		// translucent animation
-		if (posts.length) {
-			$('#content').css('opacity', $this.options.opacity);
-		}
-
-		// to check visited
-		engine.runtime.sendMessage({action: 'check', data: check});
-	}
-	postData(item) {
-		const $this = this;
-
-		const post_id = item.attr('id').match(/([0-9]+)$/)[1];
-
-		// if quick download enabled - make button
-		if ($this.options.download == 'enabled')
-			item.find('.share_buttons').prepend('<a data-action="download" title="Скачать все картинки из поста"></a>');
-
-		// default without exceptions
-		let exceptions = [];
-		// allow exceptions on all pages
-		if ($this.options.exceptions == 'all') {
-			exceptions = $this.options.tags;
-		}
-		// exceptions only on tags/fandoms
-		if ($this.options.exceptions == 'tag' && ($this.url[1] == 'tag' || window.location.hostname.match(/^(.*?)\.reactor.*/))) {
-			exceptions = $this.options.tags;
-		}
-		// exceptions not in tags/fandoms
-		if ($this.options.exceptions == 'notag' && !($this.url[1] == 'tag' || window.location.hostname.match(/^(.*?)\.reactor.*/))) {
-			exceptions = $this.options.tags;
-		}
-
-		// tags list
-		const tags = item.find('.taglist a');
-
-		for (const tag of tags) {
-			const name = $(tag).text();
-			// tag mark
-			if ($this.options.tag_mark == 'enabled') {
-				if (Object.values($this.tags.subscribed).find(function(e) { return e.includes(name); }))
-					$(tag).addClass('subscribed');
-				if (Object.values($this.tags.blocked).find(function(e) { return e.includes(name); }))
-					$(tag).addClass('blocked');
-			}
-
-			// tags ignore
-			if (exceptions.length) {
-				if (exceptions.includes(name.toLowerCase())) {
-					return {post_id: post_id, check: false};
-				}
-			}
-		}
-
-		// disable if post action on tag page, but this is non tag/fandom page
-		if ($this.options.page_action == 'tag' && !($this.url[1] == 'tag' || window.location.hostname.match(/^(.*?)\.reactor.*/))) {
-			return {post_id: post_id, check: false};
-		}
-		// disable if post action on non tag page, but this is tag/fandom page
-		if ($this.options.page_action == 'notag' && ($this.url[1] == 'tag' || window.location.hostname.match(/^(.*?)\.reactor.*/))) {
-			return {post_id: post_id, check: false};
-		}
-
-		return {post_id: post_id, check: true};
-	}
-	check(data) {
-		const $this = this;
-
-		// if post page - mark post as viewed
-		if ($this.url[1] == 'post')
-			engine.runtime.sendMessage({action: 'mark', data: $this.url[2]});
-
-		for (const [post_id, visited] of Object.entries(data)) {
-
-			const post = $(`#postContainer${post_id}`);
-
-			// add info date visited
-			post.find('.uhead_nick').append($('#JV_visited').Container([visited], true));
-
-			// disallow if no action on posts, extension disabled or page ignored
-			if ($this.options.post == 'none' || !$this.status || $this.options.ignore_url.includes($this.url[1]))
-				continue;
-
-			// if post is an exception
-			if (post.hasClass('JV_exception'))
-				continue;
-
-			// remove from visited hendler
-			delete $this.posts[post_id];
-			// if visited - remove from list to unlock censored
-			delete $this.unlock[post_id];
-
-			// post actions
-			switch ($this.options.post) {
-				case 'hide':
-					post.remove();
-					break;
-				case 'translucent':
-					post.css('opacity', $this.options.opacity);
-					break;
-				case 'title':
-					post.addClass('JV_title');
-					break;
-				case 'title_translucent':
-					post.addClass('JV_title');
-					post.css('opacity', $this.options.opacity);
-					break;
-			}
-		}
-
-		// auto step to next page
-		// default - disable
-		let pager = false;
-
-		// if all posts viewed
-		// and page didnt have any exceptions
-		if (Object.keys($this.posts).length == 0 && $('.JV_exception').length == 0) {
-			// if allowed on all pages except the first
-			if ($this.options.pager == 'withoutfirst') {
-				// if this not first page
-				if (document.querySelector('a.prev') !== null) {
-					pager = true;
-				}
-			}
-			// if allowed on all pages
-			if ($this.options.pager == 'all') {
-				pager = true;
-			}
-		}
-
-		// block tag loop
-		if (document.referrer) {
-			let referrerURL = new URL(document.referrer);
-			let referrer = referrerURL.pathname.split('/');
-			let num = parseInt(referrer[3]);
-			referrer.splice(3, 1);
-			referrer = decodeURI(referrerURL.origin+referrer.join('/'));
-
-			let currentURL = document.location;
-			let cpath = currentURL.pathname.split('/');
-			cpath.splice(3, 1);
-			cpath = decodeURI(currentURL.origin+cpath.join('/'));
-
-			// if the links are same
-			// but current page num - undefined
-			// and referrer page number - is numeric
-			// this is tag loop - disable pager
-			if (referrer === cpath && $this.url[3] === undefined && typeof num == 'number' && !isNaN(num))
-				pager = false;
-		}
-
-		// if pager allowed and next page exists
-		if (pager && $('a.next').length) {
-			$('a.next')[0].click();
-		} else { // else - remove translucent
-			$('#content').css('opacity', 1);
-
-			// lets unlock censored posts
-			if ($this.unlock.length)
-				engine.runtime.sendMessage({action: 'unlock', data: $this.unlock});
-		}
-	}
-	async unlockExec(data) {
-		const $this = this;
-
-		// get votes info
-		let info = {posts: {}};
-		let postIds = [];
-		for (const [post_id, item] of Object.entries(data)) {
-			if (!$(`#postContainer${post_id}`).find('.ufoot_first .vote-plus').length)
-				postIds.push(post_id);
-		}
-
-		if (Object.keys(postIds).length)
-			info = await $this.personalInfo(postIds);
-
-		for (const [post_id, item] of Object.entries(data)) {
-
-			const post = $(`#postContainer${post_id}`);
-
-			// if censored - rebuild comments
-			post.find('.toggleComments').removeClass('toggleComments').addClass('JV_toggleComments');
-
-			// if this is post page - instant load comments
-			if ($this.url[1] == 'post')
-				post.find('.JV_toggleComments').click();
-
-			// rebuild votes and get commentnumDelta
-			if (post_id in info) {
-				let vote = {};
-				if (info[post_id].votes.vote === null) {
-					vote.rating = '--';
-				} else {
-					if (info[post_id].votes.rating > 0) {
-						vote.rating = info[post_id].votes.rating.toFixed(1);	
-					} else {
-						if (post.find('.ufoot_first .post_rating').length)
-							vote.rating = parseFloat(post.find('.ufoot_first .post_rating').text().match(/([0-9\.]+)/)[1]).toFixed(1);
-					}
-					if (info[post_id].votes.vote > 0) {
-						vote.vote_minus = 'vote-change';
-					} else {
-						vote.vote_plus = 'vote-change';
-					}
-				}
-				post.find('.ufoot_first .post_rating').html($('#JV_rating').Container([vote], true));
-
-				const commentnumDelta = info[post_id].comments.commentsCount - info[post_id].comments.viewedCommentsCount;
-				if (commentnumDelta > 0) {
-					post.find('span.commentnumDelta').text(`+${commentnumDelta}`);
-				}
-			}
-
-			// post content
-			const data = $this.setAttributes(item);
-			// if this is post page - show all content
-			if ($this.url[1] == 'post')
-				data[0].classList.add('allow_long');
-
-			post.find('[alt="Copywrite"], [alt="Censorship"]').replaceWith(data[0], data[1]);
-		}
-
-		var event = document.createEvent('HTMLEvents');
-		event.initEvent('DOMUpdate2', true, true);
-		event.eventName = 'DOMUpdate2';
-		document.dispatchEvent(event);
-	}
-	async tag(request) {
-		const $this = this;
-
-		// if redirect to subdomain
-		if (new URL(request.url).hostname !== window.location.hostname) {
-			window.location = request.url;
-			return;
-		}
-
-		// set page url
-		window.history.replaceState('tagPage', '', request.url);
-
-		// set page title
-		document.title = `${request.data.name} | JoyReactor`;
-
-		// menu links
-		const link = request.data.seoName.replaceAll(' ', '+');
-		const links = $('#submenu [href]');
-		$.each(links, function() {
-			if ($(this).attr('href') == 'http://m.joyreactor.cc/top') {
-				$(this).parent('div').remove();
-				return;
-			}
-
-			$(this).parent('div').removeClass('active');
-
-			$(this).text($(this).text().replace(/ \([0-9\+]+\)/, ''));
-
-			// re build links and mark as active
-			const last = $(this).attr('href').split('/').pop();
-			if (['new', 'best', 'all'].includes(last)) {
-				if (request.type == last)
-					$(this).parent('div').addClass('active');
-
-				$(this).attr('href', `/tag/${link}/${last}`);
-			} else {
-				if (request.type == 'good')
-					$(this).parent('div').addClass('active');
-
-				$(this).attr('href', `/tag/${link}`);
-			}
-		});
-
-		// remove trends
-		$('.trends_wr').remove();
-
-		// data for template
-		let data = request.data;
-
-		data.tag_id = atob(request.data.id).match(/([0-9]+)/)[1];
-
-		// breadcrumbs
-		data.breadcrumbs = [{url: 'https://joyreactor.cc/', name: 'Главная'}];
-		data.breadcrumbsCurrent = '';
-
-		while (request.data.hierarchy.length) {
-			const tag = request.data.hierarchy.pop();
-			const link = tag.seoName.replaceAll(' ', '+');
-
-			if (!request.data.hierarchy.length) {
-				data.breadcrumbsCurrent = tag.name;
-			} else {
-				data.breadcrumbs.push({url: `/tag/${link}`, name: tag.name})
-			}
-		}
-
-		// tag desc
-		if (request.data.articlePost) {
-			const description = $this.setAttributes(request.data.articlePost, true, 200);
-			description[0].classList.add('post_content_cut');
-
-			data.description = description[0].outerHTML;
-			data.description_expand = description[1].outerHTML;
-		}
-
-		// info about user favorite/blocked tags and post votes
-		let postIds = [];
-		for (const post of request.data.postPager.posts) {
-			postIds.push(atob(post.id).match(/([0-9]+)/)[1]);
-		}
-
-		const info = await $this.personalInfo(postIds);
-
-		// subscribe/block tag
-		data.favorite = {class: 'add_to_fav', text: 'подписаться'};
-		data.block = {class: 'add_to_unpopular', text: 'заблокировать'};
-
-		if (data.tag_id in $this.tags.blocked) {
-			data.block = {class: 'remove_from_unpopular', text: 'разблокировать'};
-		}
-		if (data.tag_id in $this.tags.subscribed) {
-			data.favorite = {class: 'remove_from_fav', text: 'отписаться'};
-		}	
-
-		// pagination
-		data.pagination = { prev: { href: '', class: '' }, next: { href: '', class: ''	}, expanded: [] };
-
-		const ex = [1, 2];
-		const dots = '<span>...</span>';
-		const pages = Array.from({length: Math.ceil(request.data.postPager.count/10)}, function(_, i) { return i + 1 })
-		if (request.page === 0)
-			request.page = pages.at(-1);
-
-		// prev
-		if (request.page < pages.at(-1)) {
-			if ((request.page+1) == pages.at(-1)) {
-				data.pagination.prev.href = request.path;
-			} else {
-				data.pagination.prev.href = `${request.path}/${request.page+1}`;
-			}
-		} else {
-			data.pagination.prev.class = 'current';
-		}
-
-		// next
-		if (request.page > 1) {
-			data.pagination.next.href = `${request.path}/${request.page-1}`;
-		} else {
-			data.pagination.next.class = 'current';
-		}
-
-		// pagination_expanded
-		for (let i = 1; i < 3; i++) {
-			if (pages.length > 1) {
-				const page = pages.at(-i);
-				ex.push(page);
-
-				let l;
-				if (page == request.page) {
-					l = `<span class="current">${page}</span>`;
-				} else {
-					if (page == pages.at(-1)) {
-						l = `<a href="${request.path}">${page}</a>`;
-					} else {
-						l = `<a href="${request.path}/${page}">${page}</a>`;
-					}
-				}
-				data.pagination.expanded.push(l);
-			}
-		}
-
-		if (pages.length > 2) {
-			const num = pages.indexOf(request.page);
-
-			const start = ((num-2) <= 0)?0:(num-3);
-			const end = ((num+3) > pages.length)?num:(num+3);
-
-			const tmp = pages.slice(start, end).reverse();
-			for (const i in tmp) {
-				if (ex.includes(tmp[i]))
-					tmp.splice(i, 1);
-			}
-			
-			if (tmp.at(0) < pages.at(-3))
-				data.pagination.expanded.push(dots);
-
-			for (const page of tmp) {
-				if (ex.includes(page))
-					continue;
-
-				let l;
-				if (page == request.page) {
-					l = `<span class="current">${page}</span>`;
-				} else {
-					l = `<a href="${request.path}/${page}">${page}</a>`;
-				}
-				data.pagination.expanded.push(l);
-			}
-
-			if (tmp.at(-2) > pages.at(3))
-				data.pagination.expanded.push(dots);
-		}
-
-		for (let i = 1; i >= 0; i--) {
-			const page = pages.at(i);
-			let l;
-
-			if (page == request.page) {
-				l = `<span class="current">${page}</span>`;
-			} else {
-				l = `<a href="${request.path}/${page}">${page}</a>`;
-			}
-			data.pagination.expanded.push(l);
-		}
-
-		// show tag info
-		$('#tagArticle').remove();
-		$('#contentinner').prepend($('#JV_tagPage').Container([data], true));
-
-		// show pagination
-		$('#Pagination').remove();
-		$('#contentinner').append($('#JV_pagination').Container([data], true));
-		
-		// tag header image
-		$('#contentInnerHeader').on('load', function() {
-			$(this).removeAttr('style');
-		})
-		
-		// posts
-		let postsData = [];
-		for (const post of request.data.postPager.posts) {
-			post.user.id = atob(post.user.id).match(/([0-9]+)/)[1];
-			post.post_id = atob(post.id).match(/([0-9]+)/)[1];
-
-			// tags
-			post.tagsList = [];
-			for (const tag of post.tags) {
-				const tagIds = [];
-				for (var i of tag.hierarchy) {
-					tagIds.push(atob(i.id).match(/([0-9]+)/)[1]);
-				}
-				post.tagsList.push({
-					name: tag.name,
-					ids: tagIds.join(','),
-					link: tag.seoName.replaceAll(' ', '+')
-				});
-			}
-
-			// added date/time/unix
-			const date = new Date(post.createdAt);
-			post.date = date.toLocaleString('en-GB', {day:'2-digit', month:'short', year:'numeric'}).replaceAll(' ', '.').replaceAll(',.', ' ');
-			post.time = date.getHours()+':'+('0'+date.getMinutes()).slice(-2);
-			post.timestamp = Math.floor(new Date(date).getTime() / 1000);
-
-
-			// votes
-			post.vote = [{}];
-			if (info[post.post_id].votes.vote === null) {
-				post.vote[0].rating = '--';
-			} else {
-				post.vote[0].rating = post.rating.toFixed(1);
-				if (info[post.post_id].votes.vote > 0) {
-					post.vote[0].vote_minus = 'vote-change';
-				} else {
-					post.vote[0].vote_plus = 'vote-change';
-				}
-			}
-
-			postsData.push(post);
-		}
-
-		$('#post_list').html($('#JV_post').Container(postsData, true));
-
-		// we are ready
-		$this.postsExec();
-	}
-	setAttributes(item, isPost = true) {
-		if (item === null)
-			return ['', '', ''];
-
-		// filename
-		let filename = [];
-		if ('tags' in item) {
-			let num = 3;
-			filename = [];
-			for (var q of item.tags) {
-				if (num < 0)
-					break;
-				
-				q.seoName = encodeURI(q.seoName.replaceAll(/[\s]/g, '-').replaceAll(/[\/\.\?\#]/g, ''));
-				filename.push(q.seoName);
-				num--;
-			}
-			filename = filename.join('-');
-		} else {
-			filename = 'image';
-		}
-
-		// attributes
-		let attributes = {};
-		let i = 1;
-
-		if (Object.keys(item.attributes).length) {
-			for (const attribute of item.attributes) {
-				const block = document.createElement('div');
-				block.classList.add('image');
-
-				switch(attribute.type) {
-					case 'PICTURE':
-						const image_id = atob(attribute.id).match(/([0-9]+)/)[1];
-
-						// img element
-						let img = document.createElement('img');
-
-						if (isPost) {
-							img.src = `//img10.reactor.cc/pics/post/${filename}-${image_id}.jpg`;
-
-							// parent link full image
-							let link = document.createElement('a');
-							link.href = `//img10.reactor.cc/pics/post/full/${filename}-${image_id}.jpg`;
-							link.setAttribute('rel', 'prettyPhoto');
-							link.appendChild(img);
-
-							block.appendChild(link);
-						} else {
-							img.src = `//img2.reactor.cc/pics/comment/${filename}-${image_id}.jpg`;
-
-							block.appendChild(img);
-						}
-						break;
-					case 'YOUTUBE':
-						let youtube = document.createElement('iframe');
-						youtube.classList.add('youtube-player');
-
-						youtube.setAttribute('type', 'text/html');
-						youtube.setAttribute('width', 560);
-						youtube.setAttribute('height', 315);
-						youtube.setAttribute('frameborder', 0);
-						youtube.setAttribute('allowfullscreen', 'allowfullscreen');
-						youtube.setAttribute('src', `https://www.youtube.com/embed/${attribute.value}?wmode=transparent&amp;rel=0`);
-
-						block.appendChild(youtube);
-						break;
-					case 'COUB':
-						let coub = document.createElement('iframe');
-
-						coub.setAttribute('width', 640);
-						coub.setAttribute('height', 360);
-						coub.setAttribute('frameborder', 0);
-						coub.setAttribute('allowfullscreen', true);
-						coub.setAttribute('src', `https://coub.com/embed/${attribute.value}?muted=false&amp;autostart=false&amp;originalSize=false&amp;startWithHD=false&amp;wmode=opaque`);
-
-						block.appendChild(coub);
-						break;
-					case 'SOUNDCLOUD':
-						attribute.value = JSON.parse(attribute.value);
-						let soundcloud = document.createElement('iframe');
-
-						soundcloud.setAttribute('width', '100%');
-						soundcloud.setAttribute('height', attribute.value.height);
-						soundcloud.setAttribute('scrolling', 'no');
-						soundcloud.setAttribute('frameborder', 'no');
-						soundcloud.setAttribute('allow', 'autoplay');
-						
-						soundcloud.setAttribute('src', `https://w.soundcloud.com/player/?url=${attribute.value.url}&amp;color=#ff5500&amp;auto_play=false&amp;hide_related=false&amp;show_comments=true&amp;show_user=true&amp;show_reposts=false&amp;show_teaser=true&amp;visual=true`);
-
-						block.appendChild(soundcloud);
-						break;
-				}
-
-				attributes[i] = block.outerHTML;
-				i++;
-			}
-		}
-
-		// match all in text
-		let toReplace = {};
-		const text = item.text.matchAll(/&attribute_insert_([0-9]+)&/g);
-		for (const insert of text) {
-			toReplace[insert[0]] = insert[1];
-		}
-		
-		// replace attributes in text
-		if (Object.keys(toReplace).length) {
-			for (const [search, id] of Object.entries(toReplace)) {
-				if (id in attributes) {
-					item.text = item.text.replace(search, attributes[id]);
-				} else {
-					item.text = item.text.replace(search, '<b>[То что здесь должно быть - было удалено]</b>');
-				}
-			}
-		}
-
-		// if unused attributes remain
-		if (Object.keys(attributes).length > Object.keys(toReplace).length) {
-			for (const [id, replace] of Object.entries(attributes)) {
-				if (!Object.values(toReplace).includes(id))
-					item.text += replace;
-			}
-		}
-
-		item.text = item.text.replace(/<br>$/, '');
-
-		// re create post content block
-		const child = document.createElement('div');
-		child.innerHTML = item.text;
-
-		const content = document.createElement('div');
-		content.classList.add('post_content');
-		content.appendChild(child);
-
-		const expand = document.createElement('div');
-		expand.classList.add('post_content_expand');
-		
-		const textExpand = document.createElement('span');
-		textExpand.textContent = 'Развернуть';
-		expand.appendChild(textExpand);
-		
-		return [content, expand, item.text];
-	}
-	async personalInfo(postIds) {
-		return new Promise(function(resolve) {
-			const params = [];
-			for (const post_id of postIds) {
-				params.push(`post${post_id}:node(id:"${btoa(`Post:${post_id}`)}") { ... on Post { rating vote { power } commentsCount viewedCommentsCount } }`);
-			}
-
 			fetch('https://api.joyreactor.cc/graphql', {
 				method: 'POST',
 				credentials: 'include',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({query: `{ ${params.join(' ')} }`})
-			}).then(response => response.json()).then(function(response) {
-				const data = {};
-
-				for (const [key, item] of Object.entries(response.data)) {
-					if (!key.match(/[0-9]+/))
-						continue;
-
-					const post_id = key.match(/[0-9]+/)[0];
-
-					data[post_id] = {
-						votes: {rating: item.rating},
-						comments: {commentsCount: item.commentsCount, viewedCommentsCount: item.viewedCommentsCount}
-					};
-
-					if (item.vote === null) {
-						data[post_id].votes.vote = null;
-					} else {
-						data[post_id].votes.vote = item.vote.power;
-					}
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({query: '{ me { token } }'})
+			}).then(function(response) {
+				return response.json()
+			}).then(function(response) {
+				if (response.data.me === null) {
+					resolve(null);
+				} else {
+					resolve(response.data.me.token);
 				}
-
-				resolve(data);
 			});
 		});
 	}
-	changeTagState(button) {
-		const tag_id = button.attr('data-tag_id');
-		let requestedState;
+	get tag() {
+		return {
+			set: function(request, callback) {
+				// if redirect to subdomain
+				if (new URL(request.tag_url).hostname !== window.location.hostname) {
+					window.location = request.tag_url;
+					return;
+				}
 
-		if (button.parent().hasClass('add_to_fav'))
-			requestedState = 'SUBSCRIBED';
-		if (button.parent().hasClass('remove_from_fav'))
-			requestedState = 'UNSUBSCRIBED';
-		if (button.parent().hasClass('add_to_unpopular'))
-			requestedState = 'BLOCKED';
-		if (button.parent().hasClass('remove_from_unpopular'))
-			requestedState = 'UNSUBSCRIBED';
-		
-		
-		fetch('https://api.joyreactor.cc/graphql', {
-			method: 'POST',
-			credentials: 'include',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				query: 'mutation FavoriteBlogMutation($id: ID! $requestedState: FavoriteTagState!) { favoriteTag(id: $id, requestedState: $requestedState) { __typename } }',
-				variables: {id: btoa(`Tag:${tag_id}`), requestedState: requestedState}
-			})
-		}).then(function() {
-			window.location.reload();
-		});
-	}
-	async getComments(post_id) {
-		const $this = this;
-		const comments = $(`#postContainer${post_id}`).find('.post_comment_list');
-		return new Promise(function(resolve) {
-			
-			const params = `{
-					node(id: "${btoa(`Post:${post_id}`)}") { 
-						... on Post { 
-							viewedCommentsAt
-							user { id }
-							comments { 
-								id
-								level 
-								parent {
-									__typename
-									id
-								}
-								user { id username }
-								createdAt 
-								rating 
-								text 
-								attributes { 
-									id
-									type
-									image { height }
-									...Attribute_attribute
-								}
-							} 
-						} 
+				// set page url
+				window.history.replaceState('tagPage', '', request.tag_url);
+				$this.url = request.tag_url.split('/');
+
+				// set page title
+				document.title = `${request.data.name} | JoyReactor`;
+
+				// menu links
+				const link = request.data.name.replaceAll(' ', '+');
+				const links = $('#submenu [href]');
+				$.each(links, function() {
+					if ($(this).attr('href') == 'http://m.joyreactor.cc/top') {
+						$(this).parent('div').remove();
+						return;
+					}
+
+					$(this).parent('div').removeClass('active');
+
+					$(this).text($(this).text().replace(/ \([0-9+]+\)/, ''));
+
+					// re build links and mark as active
+					const last = $(this).attr('href').split('/').pop();
+					if (['new', 'best', 'all'].includes(last)) {
+						if (request.tag_type == last)
+							$(this).parent('div').addClass('active');
+
+						$(this).attr('href', `/tag/${link}/${last}`);
+					} else {
+						if (request.tag_type == 'good')
+							$(this).parent('div').addClass('active');
+
+						$(this).attr('href', `/tag/${link}`);
+					}
+				});
+
+				// remove trends
+				$('.trends_wr').remove();
+
+				// data for template
+				let data = request.data;
+
+				// breadcrumbs
+				data.breadcrumbs = [{url: 'https://joyreactor.cc/', name: 'Главная'}];
+				data.breadcrumbsCurrent = '';
+
+				while (request.data.hierarchy.length) {
+					const tag = request.data.hierarchy.pop();
+					const link = tag.name.replaceAll(' ', '+');
+
+					if (!request.data.hierarchy.length) {
+						data.breadcrumbsCurrent = tag.name;
+					} else {
+						data.breadcrumbs.push({url: `/tag/${link}`, name: tag.name})
 					}
 				}
-				fragment AttributePicture_attribute on AttributePicture { 
-					__typename
-				} 
-				fragment AttributeEmbed_attribute on AttributeEmbed { 
-					__typename
-					value
+
+				// tag state
+				request.data.favorite = {class: 'add_to_fav', text: 'подписаться'};
+				request.data.block = {class: 'add_to_unpopular', text: 'заблокировать'};
+
+				if (request.data.tag_id in $this.vars.user.tags.blocked)
+					request.data.block = {class: 'remove_from_unpopular', text: 'разблокировать'};
+
+				if (request.data.tag_id in $this.vars.user.tags.subscribed)
+					request.data.favorite = {class: 'remove_from_fav', text: 'отписаться'};
+
+				// tag desc
+				if (request.data.articlePost) {
+					const description = $this.posts.attributes(request.data.articlePost, true, 200);
+					description[0].classList.add('post_content_cut');
+
+					data.description = description[0].outerHTML;
+					data.description_expand = description[1].outerHTML;
 				}
-				fragment Attribute_attribute on Attribute { 
-					...AttributePicture_attribute
-					...AttributeEmbed_attribute 
-				}`;
-			fetch('https://api.joyreactor.cc/graphql?JV=1', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({query: params})
-			}).then(response => response.json()).then(function(response) {
+
+				// pagination
+				data.pagination = { prev: { href: '', class: '' }, next: { href: '', class: ''	}, expanded: [] };
+
+				const ex = [1, 2];
+				const dots = '<span>...</span>';
+				const pages = Array.from({length: Math.ceil(request.data.postPager.count/10)}, function(_, i) { return i + 1 })
+				if (request.tag_page_num === 0)
+					request.tag_page_num = pages.at(-1);
+
+				// prev
+				if (request.tag_page_num < pages.at(-1)) {
+					if ((request.tag_page_num+1) == pages.at(-1)) {
+						data.pagination.prev.href = request.url_path;
+					} else {
+						data.pagination.prev.href = `${request.url_path}/${request.tag_page_num+1}`;
+					}
+				} else {
+					data.pagination.prev.class = 'current';
+				}
+
+				// next
+				if (request.tag_page_num > 1) {
+					data.pagination.next.href = `${request.url_path}/${request.tag_page_num-1}`;
+				} else {
+					data.pagination.next.class = 'current';
+				}
+
+				// pagination_expanded
+				for (let i = 1; i < 3; i++) {
+					if (pages.length > 1) {
+						const page = pages.at(-i);
+						ex.push(page);
+
+						let l;
+						if (page == request.tag_page_num) {
+							l = `<span class="current">${page}</span>`;
+						} else {
+							if (page == pages.at(-1)) {
+								l = `<a href="${request.url_path}">${page}</a>`;
+							} else {
+								l = `<a href="${request.url_path}/${page}">${page}</a>`;
+							}
+						}
+						data.pagination.expanded.push(l);
+					}
+				}
+
+				if (pages.length > 2) {
+					const num = pages.indexOf(request.tag_page_num);
+
+					const start = ((num-2) <= 0)?0:(num-3);
+					const end = ((num+3) > pages.length)?num:(num+3);
+
+					const tmp = pages.slice(start, end).reverse();
+					for (const i in tmp) {
+						if (ex.includes(tmp[i]))
+							tmp.splice(i, 1);
+					}
+					
+					if (tmp.at(0) < pages.at(-3))
+						data.pagination.expanded.push(dots);
+
+					for (const page of tmp) {
+						if (ex.includes(page))
+							continue;
+
+						let l;
+						if (page == request.tag_page_num) {
+							l = `<span class="current">${page}</span>`;
+						} else {
+							l = `<a href="${request.url_path}/${page}">${page}</a>`;
+						}
+						data.pagination.expanded.push(l);
+					}
+
+					if (tmp.at(-2) > pages.at(3))
+						data.pagination.expanded.push(dots);
+				}
+
+				for (let i = 1; i >= 0; i--) {
+					const page = pages.at(i);
+					let l;
+
+					if (page == request.tag_page_num) {
+						l = `<span class="current">${page}</span>`;
+					} else {
+						l = `<a href="${request.url_path}/${page}">${page}</a>`;
+					}
+					data.pagination.expanded.push(l);
+				}
+
+				// show tag info
+				$('#tagArticle').remove();
+				$('#contentinner').prepend($('#JV_tagPage').Container([data]));
+
+				// show pagination
+				$('#Pagination').remove();
+				$('#contentinner').append($('#JV_pagination').Container([data]));
+				
+				// tag header image
+				$('#contentInnerHeader').on('load', function() {
+					$(this).removeAttr('style');
+				})				
+
+				$('#post_list').html($('#JV_post').Container(request.data.postPager.posts));
+
+				callback();
+			},
+			state: function(tag_id, state) {
+				switch (state) {
+					case 'add_to_fav':
+						state = 'SUBSCRIBED';
+						break;
+					case 'add_to_unpopular':
+						state = 'BLOCKED';
+						break;
+					default:
+						state = 'UNSUBSCRIBED';
+						break;
+				}
+				
+				engine.runtime.sendMessage({method: 'tag', action: 'state', data: {tag_id: tag_id, state: state}});
+				return true;
+			}
+		}
+	}
+	get posts() {
+		return {
+			check: function(item) {
+				const post_id = item.attr('id').match(/([0-9]+)$/)[1];
+
+				// if quick download enabled - make button
+				if ($this.vars.options.download_status)
+					item.find('.share_buttons').prepend('<span data-action="download" class="big_button" title="Скачать все картинки из поста"></span>');
+
+				let fandomOrTag = false;
+				const subdomain = window.location.hostname.match(/^(.*?)\.reactor.*/);
+				if (subdomain) {
+					if (!['old', 'joy'].includes(subdomain[1]))
+						fandomOrTag = true;
+				}
+				if ($this.url[1] == 'tag')
+					fandomOrTag = true;
+
+				// default without exceptions
+				let exceptions = [];
+				// allow exceptions on all pages
+				if ($this.vars.options.tags_exceptions_page == 'all') {
+					exceptions = Object.values($this.vars.options.tags_list);
+				}
+				// exceptions only on tags/fandoms
+				if ($this.vars.options.tags_exceptions_page == 'tag' && fandomOrTag) {
+					exceptions = Object.values($this.vars.options.tags_list);
+				}
+				// exceptions not in tags/fandoms
+				if ($this.vars.options.tags_exceptions_page == 'notag' && !fandomOrTag) {
+					exceptions = Object.values($this.vars.options.tags_list);
+				}
+
+				// tags list
+				const tags = item.find('.taglist a');
+
+				// tag mark
+				if ($this.vars.options.post_tags_mark) {
+					for (const tag of tags) {
+						const id = parseInt($(tag).attr('data-ids').split(',')[0]);
+						
+						if ($this.vars.user.tags.subscribed.includes(id))
+							$(tag).addClass('subscribed');
+						if ($this.vars.user.tags.blocked.includes(id))
+							$(tag).addClass('blocked');
+					}
+				}
+
+				// tags ignore
+				if (exceptions.length) {
+					for (const tag of tags) {
+						const id = parseInt($(tag).attr('data-ids').split(',')[0]);
+
+						if (exceptions.includes(id)) {
+							return {post_id: post_id, check: false};
+						}
+					}
+				}
+
+
+				// disable if post action on tag page, but this is non tag/fandom page
+				if ($this.vars.options.post_pages_action == 'tag' && fandomOrTag) {
+					return {post_id: post_id, check: false};
+				}
+				// disable if post action on non tag page, but this is tag/fandom page
+				if ($this.vars.options.post_pages_action == 'notag' && !fandomOrTag) {
+					return {post_id: post_id, check: false};
+				}
+
+				return {post_id: post_id, check: true};
+			},
+			get: function() {
+
+				// if quick download enabled - make button
+				if ($this.vars.options.download_status)
+					$('#submenu').append('<span data-action="download" class="big_button" title="Скачать все картинки на странице"></span>');
+
+				// list to check visited
+				const get = [];
+
+				// all posts on page
+				const posts = $('.postContainer');
+
+				$.each(posts, function() {
+					// get post_id and options to check
+					const post = $this.posts.check($(this));
+
+					// if this is exception
+					if (!post.check) {
+						$(this).addClass('JV_exception');
+					} else {
+						// save globally
+						$this.lists.posts[post.post_id] = $(this).find('.ufoot');
+					}
+
+					// to check
+					get.push(post.post_id);
+					
+					// post is censored?
+					const iscensored = $(this).find('[alt="Copywrite"], [alt="Censorship"]').length;
+					if (iscensored) {
+						$this.lists.unlock.push(post.post_id);
+					}
+				});
+				
+				// translucent animation
+				if (posts.length && $this.vars.options.post_action !== 'none' && $this.vars.status && !$this.vars.options.extension_ignore_url.includes($this.url[1])) {
+					$('#content').css('opacity', $this.vars.options.post_opacity);
+				}
+
+				// to check in history
+				engine.runtime.sendMessage({method: 'posts', action: 'get', data: get});
+			},
+			set: function(data, callback) {
+
+				// if post page - mark post as viewed
+				if ($this.url[1] == 'post')
+					engine.runtime.sendMessage({action: 'mark', data: $this.url[2]});
+
+				// add info date visited
+				if ($this.vars.options.post_visited_date) {
+					for (const [post_id, visited] of Object.entries(data)) {
+						$(`#postContainer${post_id}`).find('.uhead_nick').append($('#JV_visited').Container([visited]));
+
+						$this.trigger($(`#postContainer${post_id}`)[0]);
+					}
+				}
+
+				// mark posts
+				if ($this.vars.options.post_action !== 'none' && $this.vars.status && !$this.vars.options.extension_ignore_url.includes($this.url[1])) {
+					for (const post_id of Object.keys(data)) {
+
+						// remove from visited hendler
+						delete $this.lists.posts[post_id];
+
+						// find post on page
+						const post = $(`#postContainer${post_id}`);
+
+						// if post is an exception
+						if (post.hasClass('JV_exception'))
+							continue;
+
+						if ($this.vars.options.post_action_unread) {
+							if (post.find('.commentnumDelta').text())
+								continue;
+						}
+
+						// post actions
+						switch ($this.vars.options.post_action) {
+							case 'hide':
+								// if visited, and need to remove from page - remove from list to unlock censored
+								delete $this.lists.unlock[post_id];
+
+								post.remove();
+								break;
+							case 'translucent':
+								post.css('opacity', $this.vars.options.post_opacity);
+								break;
+							case 'title':
+								post.addClass('JV_title');
+								break;
+							case 'title_translucent':
+								post.addClass('JV_title');
+								post.css('opacity', $this.vars.options.post_opacity);
+								break;
+						}
+					}
+				}
+
+				callback();
+			},
+			pager: function() {
+				// auto step to next page
+				// default - disable
+				let pager = false;
+
+				// if all posts viewed
+				// and page didnt have any exceptions
+				if (!Object.keys($this.lists.posts).length && !$('.JV_exception').length) {
+					// if allowed on all pages except the first and this not first page
+					if ($this.vars.options.post_pager == 'withoutfirst' && document.querySelector('a.prev') !== null)
+						pager = true;
+
+					// if allowed on all pages
+					if ($this.vars.options.post_pager == 'all')
+						pager = true;
+
+				}
+
+				// block tag loop
+				if (document.referrer) {
+					let referrerURL = new URL(document.referrer);
+					let referrer = referrerURL.pathname.split('/');
+					let num = parseInt(referrer[3]);
+					referrer.splice(3, 1);
+					referrer = decodeURI(referrerURL.origin+referrer.join('/'));
+
+					let currentURL = document.location;
+					let cpath = currentURL.pathname.split('/');
+					cpath.splice(3, 1);
+					cpath = decodeURI(currentURL.origin+cpath.join('/'));
+
+					// if the links are same
+					// but current page num - undefined
+					// and referrer page number - is numeric
+					// this is tag loop - disable pager
+					if (referrer === cpath && $this.url[3] === undefined && typeof num == 'number' && !isNaN(num))
+						pager = false;
+				}
+
+				if ($this.vars.options.post_action_unread) {
+					$('.postContainer').each(function() {
+						if ($(this).find('.commentnumDelta').text())
+							pager = false;
+					})
+				}
+
+				// if pager allowed and next page exists
+				if (pager && $('a.next').length) {
+					$('a.next')[0].click();
+				} else { // else - remove translucent
+					$('#content').css('opacity', 1);
+				}
+			},
+			viewed: function(data) {
+				// visual mark animation
+				if ($this.vars.options.post_visual_mark && data.result && data.post_id in $this.lists.posts) {
+					$(`#postContainer${data.post_id}`).addClass('JV_mark');
+				}
+
+				delete $this.lists.posts[data.post_id];
+			},
+			unlock: function(data) {
+
+				for (const [post_id, item] of Object.entries(data)) {
+
+					const post = $(`#postContainer${post_id}`);
+
+					// rebuild comments
+					post.find('.toggleComments').removeClass('toggleComments').addClass('JV_toggleComments');
+
+					// rebuild votes
+					post.find('.ufoot_first .post_rating').replaceWith($('#JV_rating').Container([item]));
+
+					// get commentnumDelta
+					const commentnumDelta = item.commentsCount - item.viewedCommentsCount;
+					if (commentnumDelta > 0) {
+						post.find('span.commentnumDelta').text(`+${commentnumDelta}`);
+					}
+
+					// get real content
+					const content = $this.posts.attributes(item);
+
+					// if this is post page - instant load comments
+					if ($this.url[1] == 'post')
+						post.find('.JV_toggleComments').click();
+
+					// replace plug
+					post.find('[alt="Copywrite"], [alt="Censorship"]').replaceWith(content[0], content[1]);
+
+				}
+
+				$this.posts.pager();
+
+				var event = document.createEvent('HTMLEvents');
+				event.initEvent('DOMUpdate2', true, true);
+				event.eventName = 'DOMUpdate2';
+				document.dispatchEvent(event);
+			},
+			attributes: function(item, isPost = true) {
+				if (item === null)
+					return ['', '', ''];
+
+				// filename
+				let filename = [];
+				if ('tags' in item) {
+					let num = 3;
+					filename = [];
+					for (var q of item.tags) {
+						if (num < 0)
+							break;
+						
+						q.name = encodeURI(q.name.replaceAll(/[\s]/g, '-').replaceAll(/[/.?#]/g, ''));
+						filename.push(q.name);
+						num--;
+					}
+					filename = filename.join('-');
+				} else {
+					filename = 'image';
+				}
+
+				// attributes -> templates
+				if (Object.keys(item.attributes).length) {
+					for (const attribute of item.attributes) {
+						let template_id = '';
+
+						attribute.template = '';
+						attribute.filename = filename;
+
+						switch(attribute.type) {
+							case 'PICTURE':
+								if (isPost) {
+									if (['GIF', 'WEBM', 'MP4'].includes(attribute.image.type)) {
+										if (attribute.image.type == 'GIF' && !attribute.image.hasVideo) {
+											template_id = 'gif';
+										} else {
+											template_id = 'video';
+										}
+									} else {
+										template_id = 'image_post';
+									}
+								} else {
+									template_id = 'image_comment';
+								}
+								break;
+							case 'YOUTUBE':
+								template_id = 'youtube';
+								break;
+							case 'COUB':
+								template_id = 'coub';
+								break;
+							case 'SOUNDCLOUD':
+								template_id = 'soundcloud';
+								break;
+						}
+
+						attribute.template = $(`#JV_attribute_${template_id}`).Container([attribute]);
+					}
+				}
+
+				// match all in text
+				let toReplace = {};
+				const text = item.text.matchAll(/&attribute_insert_([0-9]+)&/g);
+				for (const insert of text) {
+					toReplace[insert[0]] = insert[1];
+				}
+				
+				// replace attributes in text
+				if (Object.keys(toReplace).length) {
+					for (const [search, id] of Object.entries(toReplace)) {
+						if ((id-1) in item.attributes) {
+							item.text = item.text.replace(search, item.attributes[(id-1)].template);
+						} else {
+							item.text = item.text.replace(search, '<b>[То что здесь должно быть - было удалено]</b>');
+						}
+					}
+				}
+
+				// if unused attributes remain
+				if (Object.keys(item.attributes).length > Object.keys(toReplace).length) {
+					for (const [id, attribute] of Object.entries(item.attributes)) {
+						if (!Object.values(toReplace).includes((id-1)))
+							item.text += attribute.template;
+					}
+				}
+
+				item.text = item.text.replace(/<br>$/, '');
+
+				// re create post content block
+				const child = document.createElement('div');
+				child.innerHTML = item.text;
+
+				const content = document.createElement('div');
+				content.classList.add('post_content');
+				content.appendChild(child);
+
+				const expand = document.createElement('div');
+				expand.classList.add('post_content_expand');
+				
+				const textExpand = document.createElement('span');
+				textExpand.textContent = 'Развернуть';
+				expand.appendChild(textExpand);
+				
+				return [content, expand, item.text];
+			}
+		}
+	}
+	get comments() {
+		return {
+			set: function(data) {
+				const comments = $(`#postContainer${data.post_id}`).find('.post_comment_list');
+
 				// rebuild comments form
 				comments.html($('#JV_comments').Container([{
-					post_id: post_id, 
-					user: {id: atob(response.data.node.user.id).match(/([0-9]+)/)[1]},
-					user_id: $this.user_id
-				}], true));
+					post_id: data.post_id, 
+					user: {id: data.user.id},
+					user_id: $this.vars.user.user_id
+				}]));
 
-				const viewed = Math.floor(new Date(response.data.node.viewedCommentsAt).getTime() / 1000);
-
-				for (let comment of response.data.node.comments) {
+				for (let comment of data.comments) {
+					// this is banned comment
 					if (comment.parent === null)
 						continue;
 					
-					comment.post_id = post_id;
-					comment.id = atob(comment.id).match(/([0-9]+)/)[1];
-					comment.parent.id = atob(comment.parent.id).match(/([0-9]+)/)[1];
-					comment.user.id = atob(comment.user.id).match(/([0-9]+)/)[1];
-					comment.rating = comment.rating.toFixed(1);
-
-					const date = new Date(comment.createdAt);
-					comment.date = date.toLocaleString('en-GB', {day:'2-digit', month:'short', year:'numeric'}).replaceAll(' ', '.').replaceAll(',.', ' ');
-					comment.time = date.getHours()+':'+('0'+date.getMinutes()).slice(-2);
-					comment.timestamp = Math.floor(new Date(date).getTime() / 1000);
-
-					comment.text = $this.setAttributes(comment, false)[2];
-
-					if (comment.timestamp > viewed) {
-						if ($this.user_id == comment.user.id) {
-							comment.class = 'new_my new';
-						} else {
-							comment.class = 'new';
-						}
-					}			
+					// content
+					comment.text = $this.posts.attributes(comment, false)[2];
 
 					let appendTo = comments.find('.comment_list_post');
 					if (comment.parent.__typename !== 'Post') {
 						let child = appendTo.find(`#comment_list_comment_${comment.parent.id}`);
 						if (!child.length) {
-							appendTo.find(`#comment${comment.parent.id}`).after($('#JV_comment_child').Container([comment], true));
+							appendTo.find(`#comment${comment.parent.id}`).after($('#JV_comment_child').Container([comment]));
 							appendTo = appendTo.find(`#comment_list_comment_${comment.parent.id}`);
 						}
 					}
-					appendTo.append($('#JV_comment').Container([comment], true));
+
+					appendTo.append($('#JV_comment').Container([comment]));
 				}
 
-				var event = document.createEvent('HTMLEvents');
-				event.initEvent('DOMUpdate', true, true);
-				event.eventName = 'DOMUpdate';
-				comments[0].dispatchEvent(event);
+				comments.css('display', 'block');
 
-				resolve();
-			});
-		});
-	}
-	sendComment(formData) {
-		const $this = this;
-
-		fetch('/post_comment/create', {
-			method: 'POST',
-			body: formData
-		}).then(function() {
-			$this.getComments(formData.get('post_id'));
-		});
+				$this.trigger(comments[0]);
+			},
+			add: function(data) {
+				fetch('/post_comment/create', {
+					method: 'POST',
+					body: data
+				}).then(function(response) {
+					return response.json();
+				}).then(function(response) {
+					engine.runtime.sendMessage({method: 'comments', action: 'get', data: data.get('post_id')});
+				});
+			}
+		}
 	}
 	download(button) {
 
@@ -1187,6 +1006,7 @@ class JV {
 			const image_id = $(this).attr('src').match(/([0-9]+)\.[a-z]+$/)[1];
 			items[image_id] = window.location.protocol+$(this).attr('src');
 		});
+
 		// find full links. if exists - replace
 		$.each(content.find('a.prettyPhotoLink, a.video_gif_source'), function() {
 			const image_id = $(this).attr('href').match(/([0-9]+)\.[a-z]+$/)[1];
@@ -1200,13 +1020,19 @@ class JV {
 					return { type: response.headers.get('Content-Type'), raw: blob }
 				})
 			}).then(function(data) {
-				engine.runtime.sendMessage({action: 'download', data: {
+				engine.runtime.sendMessage({method: 'download', data: {
 					filename: filename,
 					url: url,
-					data: URL.createObjectURL(new Blob([data.raw], {type: data.type}))
+					file: URL.createObjectURL(new Blob([data.raw], {type: data.type}))
 				}});
 			});
 		}
+	}
+	trigger(element) {
+		var event = document.createEvent('HTMLEvents');
+		event.initEvent('DOMUpdate', true, true);
+		event.eventName = 'DOMUpdate';
+		element.dispatchEvent(event);
 	}
 }
 

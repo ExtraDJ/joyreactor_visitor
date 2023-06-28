@@ -81,6 +81,9 @@ input[type="range"]:before {
 	top: 0px;
 	width: 100%;
 }
+input[type="text"] {
+	margin-bottom: 10px;
+}
 body {
 	display: block;
 	background: rgba(254, 204, 101, 1);

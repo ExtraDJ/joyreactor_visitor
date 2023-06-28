@@ -23,11 +23,11 @@
 				</div>
 				<div id="blogFavroiteLinks">
 					<p class="{{~item~.favorite.class}}">
-						<a data-tag_id="{{~item~.tag_id}}" class="change_favorite_link" title="добавить в любимые - посты с этим тегом всегда будут появляться в вашей персональной ленте">
+						<a data-tag_id="{{~item~.tag_id}}" title="добавить в любимые - посты с этим тегом всегда будут появляться в вашей персональной ленте">
 						{{~item~.favorite.text}}</a>
 					</p>
 					<p class="{{~item~.block.class}}">
-						<a data-tag_id="{{~item~.tag_id}}" class="change_favorite_link" title="добавить в нелюбимые - посты с этим тегом никогда не будут появляться в вашей персональной ленте">
+						<a data-tag_id="{{~item~.tag_id}}" title="добавить в нелюбимые - посты с этим тегом никогда не будут появляться в вашей персональной ленте">
 						{{~item~.block.text}}</a>
 					</p>
 				</div>
@@ -92,7 +92,7 @@
 						<span class="hidden_link">
 							<a title="скрыть содержимое поста" href="/hidden/create/{{~item~.post_id}}">скрыть</a>
 						</span>
-						{{~array~.vote.JV_rating}}
+						<span class="post_rating"></span>
 						<div class="manage_post_wr">
 							<span style="display:none;" class="post_set_header">
 								<form action=""><label><input type="text" name="post_header" class="post_header" size="74" value=""></label><input type="submit" name="commit" value="Сохранить"></form>
@@ -137,11 +137,11 @@
 		<b><a title="{{~item~.name}}" data-ids="{{~item~.ids}}" href="/tag/{{~item~.link}}">{{~item~.name}}</a>&nbsp;</b>
 	</template>
 	<template id="JV_rating">
-		<span class="post_rating">
+		<span class="post_rating" data-vote="{{~item~.vote}}">
 			<span>
 				{{~item~.rating}}
-				<div class="vote-plus {{~item~.vote_plus}}"></div>
-				<div class="vote-minus {{~item~.vote_minus}}"></div>
+				<div class="vote-plus {{~check~.vote.minus.vote-change}}"></div>
+				<div class="vote-minus {{~check~.vote.plus.vote-change}}"></div>
 			</span>
 		</span>
 	</template>
@@ -174,7 +174,7 @@
 		<div id="comment_list_comment_{{~item~.parent.id}}" class="comment_list" creatorid="{{~item~.user.id}}"></div>
 	</template>
 	<template id="JV_comment">
-		<div id="comment{{~item~.id}}" class="comment hightlighted filled{{~item~.class}}" parent="{{~item~.parent.id}}" timestamp="{{~item~.timestamp}}" userid="{{~item~.user.id}}">
+		<div id="comment{{~item~.id}}" class="comment hightlighted {{~item~.class}}" parent="{{~item~.parent.id}}" timestamp="{{~item~.timestamp}}" userid="{{~item~.user.id}}">
 			<div class="txt" id="comment_txt_{{~item~.post_id}}_{{~item~.id}}">
 				<div>{{~item~.text}}</div>
 				<div class="comments_bottom">
@@ -190,8 +190,9 @@
 						<a href="javascript:" class="response">ответить</a>
 						<a href="/post/{{~item~.post_id}}#comment{{~item~.id}}" class="comment_link">ссылка</a>
 					</span>
-					<span class="comment_rating" comment_id="{{~item~.id}}">
-						<span>{{~item~.rating}}
+					<span class="comment_rating" comment_id="{{~item~.id}}" data-vote="{{~item~.vote}}">
+						<span>
+							{{~item~.rating}}
 							<div class="vote-plus" title="голосовать за"></div>
 							<div class="vote-minus" title="голосовать против"></div>
 						</span>
@@ -204,6 +205,52 @@
 		<div class="JV_visited">
 			<span>Вы видели этот пост</span>
 			<span>{{~item~}}</span>
+		</div>
+	</template>
+	<template id="JV_attribute_image_post">
+		<div class="image">
+			<a href="//img10.reactor.cc/pics/post/full/{{~item~.filename}}-{{~item~.id}}.jpg" rel="prettyPhoto">
+				<img src="//img10.reactor.cc/pics/post/{{~item~.filename}}-{{~item~.id}}.jpg" />
+			</a>
+		</div>
+	</template>
+	<template id="JV_attribute_image_comment">
+		<div class="image">
+			<img src="//img2.reactor.cc/pics/comment/{{~item~.filename}}-{{~item~.id}}.jpg" />
+		</div>
+	</template>
+	<template id="JV_attribute_gif">
+		<div class="image">
+			<span class="video_gif_holder">
+				<a href="//img2.joyreactor.cc/pics/post/{{~item~.filename}}-{{~item~.id}}.gif" class="video_gif_source">ссылка на гифку</a>
+				<img src="//img2.joyreactor.cc/pics/post/{{~item~.filename}}-{{~item~.id}}.gif" />
+			</span>
+		</div>
+	</template>
+	<template id="JV_attribute_video">
+		<div class="image">
+			<span class="video_holder">
+				<video class="video_gif" width="406" height="720" autoplay playsinline loop muted poster="//img2.reactor.cc/pics/post/static/{{~item~.filename}}-{{~item~.id}}.jpeg">
+					<source src="//img2.reactor.cc/pics/post/webm/{{~item~.filename}}-{{~item~.id}}.webm" type="video/webm"/>
+					<source src="//img2.reactor.cc/pics/post/mp4/{{~item~.filename}}-{{~item~.id}}-8004811.mp4" type="video/mp4"/>
+					<img src="//img2.reactor.cc/pics/post/static/{{~item~.filename}}-{{~item~.id}}.jpeg"/>
+				</video>
+			</span>
+		</div>
+	</template>
+	<template id="JV_attribute_youtube">
+		<div class="image">
+			<iframe class="youtube-player" type="text/html" width="560" height="315" frameborder="0" allowfullscreen="allowfullscreen" src="https://www.youtube.com/embed/{{~item~.value}}?wmode=transparent&rel=0"></iframe>
+		</div>
+	</template>
+	<template id="JV_attribute_coub">
+		<div class="image">
+			<iframe width="640" height="360" frameborder="0" allowfullscreen="true" src="https://coub.com/embed/{{~item~.value}}?muted=false&autostart=false&originalSize=false&startWithHD=false&wmode=opaque"></iframe>
+		</div>
+	</template>
+	<template id="JV_attribute_soundcloud">
+		<div class="image">
+			<iframe width="100%" height="{{~item~.value.height}}" scrolling="no" frameborder="no" allow="autoplay" src="https://w.soundcloud.com/player/?url={{~item~.value.url}}&color=#ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true&visual=true"></iframe>
 		</div>
 	</template>
 </templates>

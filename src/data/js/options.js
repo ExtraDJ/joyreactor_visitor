@@ -1,12 +1,16 @@
-const is_firefox = function() {
-	if (typeof browser !== 'undefined') { return true; }
-	return false;
-}
-const getEngine = function() {
-	if (typeof browser !== 'undefined') { return browser; }
+const engine = (function() {
+	if (typeof browser !== 'undefined') {
+		return browser;
+	}
 	return chrome;
-}
-const engine = getEngine();
+})();
+
+const is_firefox = (function() {
+	if (typeof browser !== 'undefined') {
+		return true;
+	}
+	return false;
+})();
 
 function is_num(number) {
 	if (number === null || number === undefined)
@@ -41,122 +45,133 @@ function depthTitle(value) {
 	return title;
 }
 
+var options = {};
+
 // document loaded
-document.addEventListener('DOMContentLoaded', async function() {
+$(window).on('load', function() {
+
 	// firefox range input
-	if (!is_firefox()) {
-		document.querySelector('[name="depth"]').nextElementSibling.style.display = 'none';
-		document.querySelector('[name="opacity"]').nextElementSibling.style.display = 'none';
+	if (!is_firefox) {
+		$('[name="extension_depth"], [name="post_opacity"]').siblings('span').css('display', 'none');
 	}
 
-	// get current options
-	const options = (await engine.storage.sync.get({
-		options: {
-			tags: '',
-			exceptions: 'tag',
-			pager: 'withoutfirst',
-			tag_mark: 'enabled',
-			download: 'enabled',
-			download_folder: 'JV/',
-			ignore_url: ['post', 'user', 'discussion', 'people'],
-			page_action: 'all',
-			post: 'translucent',
-			opacity: 0.6,
-			depth: 3
-		}
-	})).options;
-	
-	// display current options
-	for (const [key, value] of Object.entries(options)) {
-		let title;
+	engine.runtime.onMessage.addListener(async function(request, sender) {
+		// messages only from service worker
+		if (typeof sender.tab === 'object')
+			return;
 
-		switch (key) {
-			case 'tags':
-				document.querySelector(`[name="${key}"]`).innerText = value;
-				break;
-			case 'exceptions':
-			case 'pager':
-			case 'tag_mark':
-			case 'download':
-			case 'page_action':
-				document.querySelector(`[name="${key}"][value="${value}"]`).click();
-				break;
-			case 'download_folder':
-				document.querySelector(`[name="${key}"]`).value = value;
-				break;
-			case 'ignore_url':
-				document.querySelector(`[name="${key}"]`).value = value.join(', ');
-				break;
-			case 'post':
-				document.querySelector(`[name="${key}"][value="${value}"]`).click();
-				if (value.includes('translucent')) {
-					document.getElementById('opacity').classList.remove('hide');
+		if (request.method == 'options' && typeof request.options === 'object') {
+			options = request.options;
+			
+			for (let [key, value] of Object.entries(options)) {
+				switch (key) {
+					case 'extension_ignore_url':
+						$(`[name="${key}"]`).val(value.join(', '));
+						break;
+					case 'tags_list':
+						if (!Array.isArray(value))
+							value = Object.keys(value);
+
+						$(`[name="${key}"]`).val(value.join(', '));
+						break;
+					case 'sync_key':
+						$(`[name="${key}"]`).val(value);
+						if (value) {
+							$('#sync_get, #sync_set').removeClass('hide');
+						} else {
+							$('#sync_get, #sync_set').addClass('hide');
+						}
+						break;
+					case 'download_folder':
+					case 'download_prefix':
+						$(`[name="${key}"]`).val(value);
+						break;
+					case 'post_pages_action':
+						$(`[name="${key}"][value="${value}"]`).click();
+						if (value.includes('translucent')) {
+							$('#post_opacity').removeClass('hide');
+						}
+						break;
+					case 'post_opacity':
+						$(`[name="${key}"]`).val(Math.round((1 - value)*100)).attr('title', Math.round((1 - value)*100)+'%').siblings('span').text(Math.round((1 - value)*100)+'%');
+						break;
+					case 'extension_depth':
+						let title = depthTitle(value);
+						$(`[name="${key}"]`).val(value).attr('title', title).siblings('span').text(title);
+						break;
+					default:
+						$(`[name="${key}"][value="${value}"]`).click();
+						break;
 				}
-				break;
-			case 'opacity':
-				document.querySelector(`[name="${key}"]`).value = Math.round((1 - value)*100);
-				document.querySelector(`[name="${key}"]`).title = Math.round((1 - value)*100)+'%';
-				document.querySelector(`[name="${key}"]`).nextElementSibling.innerText = Math.round((1 - value)*100)+'%';
-				break;
-			case 'depth':
-				title = depthTitle(value);
-
-				document.querySelector(`[name="${key}"]`).value = value;
-				document.querySelector(`[name="${key}"]`).title = title;
-				document.querySelector(`[name="${key}"]`).nextElementSibling.innerText = title;
-				break;
+			}
 		}
-	}
+	});
+	// request options from service worker
+	engine.runtime.sendMessage({method: 'options'});
 
 	// when any change
-	document.addEventListener('input', async function(event) {
+	$(document).on('input', async function(event) {
 		const key = event.target.getAttribute('name');
-		const value = event.target.value;
-		let title;
+		let value = event.target.value;
 
 		const reader = new FileReader();
-
 		switch (key) {
-			case 'tags':
-			case 'exceptions':
-			case 'pager':
-			case 'tag_mark':
-			case 'download':
-			case 'page_action':
+			case 'sync_key':
+				if (value) {
+					$('#sync_get, #sync_set').removeClass('hide');
+				} else {
+					$('#sync_get, #sync_set').addClass('hide');
+				}
 				options[key] = value;
+				break;
+			case 'extension_ignore_url':
+			case 'tags_list':
+				let list = [];
+				value = value.split(',').map(function(item) {
+					return item.trim();
+				}).filter(function(item) {
+					return item;
+				});
+				for (let item of value) {
+					list.push(item);
+				}
+				options[key] = list;
 				break;
 			case 'download_folder':
-				let path = value.trim().replace(/^\/+|\/+$/, '');
-				if (path) { path += '/'; }
+				let path = value.split('/').map(function(path) {
+					return path.trim();
+				}).filter(function(path) {
+					return path;
+				});
+
+				path = path.join('/')
+				if (path.length) { path += '/'; }
+
 				options[key] = path;
 				break;
-			case 'ignore_url':
-				let pages = [];
-				for (let i of value.split(',')) {
-					i = i.trim();
-					if (i) { pages.push(i); }
-				}
-				options[key] = pages;
+			case 'download_prefix':
+				options[key] = value.trim().replace('/', '');
 				break;
-			case 'post':
+			case 'post_action':
 				options[key] = value;
 				if (value.includes('translucent')) {
-					document.getElementById('opacity').classList.remove('hide');
+					$('#post_opacity').removeClass('hide');
 				} else {
-					document.getElementById('opacity').classList.add('hide');
+					$('#post_opacity').addClass('hide');
 				}
 				break;
-			case 'opacity':
-				document.querySelector(`[name="${key}"]`).title = value+'%';
-				document.querySelector(`[name="${key}"]`).nextElementSibling.innerText = value+'%';
+			case 'post_opacity':
+				value = parseInt(value);
 				options[key] = (100 - value)/100;
-				break;
-			case 'depth':
-				title = depthTitle(value);
 
-				options[key] = parseInt(value);
-				document.querySelector(`[name="${key}"]`).title = title;
-				document.querySelector(`[name="${key}"]`).nextElementSibling.innerText = title;
+				$(`[name="${key}"]`).val(value).attr('title', `${value}%`).siblings('span').text(`${value}%`);
+				break;
+			case 'extension_depth':
+				value = parseInt(value);
+				options[key] = value;
+
+				let title = depthTitle(value);
+				$(`[name="${key}"]`).val(value).attr('title', title).siblings('span').text(title);
 				break;
 			case 'import':
 				reader.addEventListener('load', function() {
@@ -168,7 +183,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 						let item = list[i].split(':');
 						if (is_num(item[0]) && is_num(item[1])) {
 							data[item[0]] = {
-								id: parseInt(item[0]),
+								post_id: parseInt(item[0]),
 								added: parseInt(item[1])
 							};
 						}
@@ -179,90 +194,106 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 				reader.readAsText(event.target.files[0]);
 				break;
+			default:
+				if (value.match(/([0-9]+)/)) {
+					options[key] = parseInt(value);
+				} else {
+					options[key] = value.trim();
+				}
+				break;
 		}
 
 		// save
 		await engine.storage.sync.set({options: options});
 	});
-	document.getElementById('options').addEventListener('click', async function() {
-		if (confirm('Вы уверены что хотите сбросить настройки?')) {
-			engine.storage.sync.clear(function() {
-				window.location.reload();
-			});
-		}
-	});
-	// flush cache
-	document.getElementById('cache').addEventListener('click', async function() {
-		if (confirm('Вы уверены что хотите очистить кеш?')) {
-			engine.storage.local.get(null, function(data) {
-				let update = {};
-				let remove = [];
-				for (const post_id in data) {
-					if (!is_num(post_id))
-						continue;
-
-					if (!('added' in data[post_id])) {
-						remove.push(post_id);
-						continue;
-					}
-					update[post_id] = {
-						id: data[post_id].id,
-						added: data[post_id].added
-					}
-				}
-				engine.storage.local.remove(remove, function() {
-					engine.storage.local.set(update, function() {
+	$(document).on('click', 'button', async function() {
+		switch ($(this).attr('id')) {
+			case 'sync_get':
+				engine.runtime.sendMessage({method: 'sync', action: 'get'});
+				break;
+			case 'sync_set':
+				engine.runtime.sendMessage({method: 'sync', action: 'set'});
+				break;
+			case 'reset': // reset options
+				if (confirm('Вы уверены что хотите сбросить настройки?')) {
+					engine.storage.sync.clear(function() {
 						window.location.reload();
 					});
-				});
-			});
-		}
-	});
-	// flush all
-	document.getElementById('flush').addEventListener('click', async function() {
-		if (confirm('Вы уверены что хотите очистить историю просмотра?')) {
-			engine.storage.local.clear(function() {
-				engine.storage.sync.clear(function() {
-					window.location.reload();
-				});
-			});
-		}
-	});
-	// export
-	document.getElementById('export').addEventListener('click', async function() {
-		// get all data
-		const content = await new Promise(function(resolve) {
-
-			const result = [];
-
-			engine.storage.local.get(null, function(object) {
-				const list = Object.values(object);
-				if (list.length > 0) {
-					do {
-						let item = list.shift();
-						if (!is_num(item.id))
-							continue;
-
-						// post_id:added (unix)
-						result.push(`${item.id}:${item.added}`);
-					} while (list.length > 0);
 				}
+				break;
+			case 'clear': // clear history
+				if (confirm('Вы уверены что хотите очистить историю просмотра?')) {
+					engine.runtime.sendMessage({method: 'sync', action: 'clear'});
+					engine.storage.local.get(null, function(data) {
+						let remove = [];
+						for (const post_id in data) {
+							// if this post data
+							if (is_num(post_id))
+								remove.push(post_id);
+						}
+						engine.storage.local.remove(remove, function() {
+							window.location.reload();
+						});
+					});
+				}
+				break;
+			case 'cache': // clear cache
+				if (confirm('Вы уверены что хотите очистить кеш?')) {
+					engine.runtime.sendMessage({method: 'posts', action: 'cache'});
+				}
+				break;
+			case 'clearall':
+				if (confirm('Вы уверены что хотите очистить настройки и историю?')) {
+					engine.runtime.sendMessage({method: 'sync', action: 'clearall'});
+					engine.storage.sync.clear(function() {
+						engine.storage.local.get(null, function(data) {
+							let remove = [];
+							for (const post_id in data) {
+								// if this post data
+								if (is_num(post_id))
+									remove.push(post_id);
+							}
+							engine.storage.local.remove(remove, function() {
+								window.location.reload();
+							});
+						});
+					});
+				}
+				break;
+			case 'export': // export history
+				const content = await new Promise(function(resolve) {
 
-				resolve(result);
-			});
-		});
-		// content
-		const file = URL.createObjectURL(new Blob([content.join("\n")]));
-		// filename
-		const padL = function(nr, chr = `0`) { return `${nr}`.padStart(2, chr) };
-		const d = new Date;
-		const filename = 'joyreactor_'+[padL(d.getMonth()+1), padL(d.getDate()), d.getFullYear()].join('_')+'_'+[padL(d.getHours()), padL(d.getMinutes()), padL(d.getSeconds())].join('_')+'.txt';
-		// download
-		engine.downloads.download({
-			url: file, 
-			filename: filename, 
-			conflictAction: 'overwrite'
-		});
-	});
+					const result = [];
+
+					engine.storage.local.get(null, function(object) {
+						const list = Object.values(object);
+						if (list.length > 0) {
+							while(list.length) {
+
+								let item = list.shift();
+								if (!is_num(item.post_id))
+									continue;
+
+								// post_id:added (unix)
+								result.push(`${item.post_id}:${item.added}`);
+							}
+						}
+
+						resolve(result);
+					});
+				});
+
+				// content
+				const file = URL.createObjectURL(new Blob([content.join("\n")]));
+				// filename
+				const filename = `JV_${new Date().toLocaleString('uk-UA').replaceAll(/([,.: ])/g, '_')}.txt`;
+				// download
+				engine.downloads.download({
+					url: file, 
+					filename: filename, 
+					conflictAction: 'overwrite'
+				});
+				break;
+		}
+	})
 });
-

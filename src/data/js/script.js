@@ -1,630 +1,1331 @@
-const is_firefox = function() {
-	if (typeof browser !== 'undefined') { return true; }
-	return false;
-}
-const getEngine = function() {
+const engine = (function() {
 	if (typeof browser !== 'undefined') {
 		browser.action = browser.browserAction;
-
-		if (browser.storage.session == undefined) {
-			browser.storage.session = browser.storage.local;
-		}
-
 		return browser;
 	}
 	return chrome;
+})();
+
+String.prototype.val = function() {
+	return parseInt(atob(this).match(/([0-9]+)/)[1]);
+};
+String.prototype.date = function() {
+	const date = new Date(this);
+	return {
+		date: date.toLocaleString('en-GB', {day:'2-digit', month:'short', year:'numeric'}).replaceAll(' ', '.').replaceAll(',.', ' '),
+		time: date.getHours()+':'+('0'+date.getMinutes()).slice(-2),
+		timestamp: Math.floor(date.getTime() / 1000)
+	};
+};
+function is_num(number) {
+	if (number === null || number === undefined)
+		return false;
+
+	number = parseInt(number);
+	return (typeof number == 'number' && !isNaN(number));
 }
-const engine = getEngine();
+
+var $this;
 
 class JV {
 	constructor() {
-		this.options = {};
-		this.links = {};
-		this.redirects = {};
-		this.server_time = {};
+		$this = this;
+
+		this.api = 'https://api.joyreactor.cc/graphql?JV=1';
+		this.tabs = [];
+		this.timestamp = Math.floor(Date.now() / 1000);
+
+		this.vars = {
+			comeback: {
+				jumps: {},
+				forwards: {}
+			},
+			token: {
+				string: '',
+				expires: 0,
+				cycle: false
+			},
+			options: {},
+			user: {}
+		};
 	}
 	async init() {
-		const $this = this;
+		setInterval(function() {
+			$this.timestamp++;
+		}, 1000);
 
-		$this.options = await $this.getOptions();
+		if (engine.runtime.getManifest().manifest_version == 3)
+			importScripts('sha256.js');
 
-		if (engine.runtime.getManifest().manifest_version == 3) {
-			$this.rulesV3();
-		} else {
-			$this.rulesV2();
-		}
-
+		$this.netRules();
 		$this.handler();
 	}
 	handler() {
-		const $this = this;
+		// on connect - check token
+		engine.runtime.onConnect.addListener(async function(request) {
+			// if has token - response options
+			if (await $this.token.check()) {
 
+				await $this.response(request.sender.tab.id, {
+					method: 'options', 
+					status: await $this.status.get(),
+					options: await $this.options.get(),
+					user: await $this.user.get()
+				});
+			} else {
+				// else push to tabs list
+				$this.tabs.push(request.sender.tab.id);
+			}
+			
+			return true;
+		});
 		engine.runtime.onMessage.addListener(async function(request, sender) {
-			switch (request.action) {
-				case 'time': // set server time
-					$this.server_time = request.data;
-					break;
-				case 'me': // get/set user info
-					engine.tabs.sendMessage(sender.tab.id, {action: 'me', data: await $this.me(request.data)});
+			switch (request.method) {
+				case 'token':
+					switch(request.action) {
+						case 'set': // recived user token
+							if (await $this.token.set(request.data)) {
+								// if have tabs waiting - send options
+								while ($this.tabs.length) {
+									const tab_id = $this.tabs.shift();
+
+									await $this.response(tab_id, {
+										method: 'options', 
+										status: await $this.status.get(),
+										options: await $this.options.get(),
+										user: await $this.user.get()
+									});
+								}
+							}
+							break;
+						case 'del': // need to del token -> renew
+							$this.token.del();
+							break;
+					}
 					break;
 				case 'options': // send extension options
-					engine.tabs.sendMessage(sender.tab.id, {action: 'options', data: $this.options, status: await $this.getStatus()});
+					switch(request.action) {
+						case 'page':
+							engine.runtime.openOptionsPage();
+							break;
+						default:
+							await $this.response(sender.tab.id, {
+								method: request.method, 
+								action: request.action, 
+								options: await $this.options.get(),
+								user: await $this.user.get()
+							});
+							break;
+					}				
 					break;
-				case 'check': // check posts in storage
-					engine.tabs.sendMessage(sender.tab.id, {action: 'check', data: await $this.check(request.data)});
+				case 'user':
+					switch(request.action) {
+						case 'del': // del user data. login/logout
+							$this.user.del();
+							break;
+					}
 					break;
-				case 'unlock': // unlock censored
-					engine.tabs.sendMessage(sender.tab.id, {action: 'unlock', data: await $this.unlock(request.data)});
+				case 'sync':
+					switch (request.action) {
+						case 'get':
+							await $this.response(sender.tab.id, {
+								method: 'options', 
+								options: await $this.sync.options.get(),
+							});
+							break;
+						case 'set':
+							$this.sync.options.set();
+							break;
+						case 'clear':
+						case 'clearall':
+							$this.sync.clear(request.action);
+							break;
+					}
 					break;
 				case 'tag': // tag page
-					let params;
-					let url;
-					if (sender.tab.id in $this.redirects) { // we have redirects?
-						url = $this.redirects[sender.tab.id];
-						delete $this.redirects[sender.tab.id];
-					} else {
-						url = request.url;
+					switch (request.action) {
+						case 'get': // check tag page in forwards
+							await $this.response(sender.tab.id, await $this.tag.get(sender.tab.id, request.referrer));
+							break;
+						case 'state': // change tag state
+							await $this.response(sender.tab.id, {
+								method: 'reload',
+								data: await $this.tag.state(request.data)
+							});
+							break;
 					}
-					if (!url) { return false; }
-
-					params = new URL(url).pathname.split('/');
-
-					const tag = decodeURI(params[2]);
-					let type = 'good';
-					let page = 0;
-
-					if (params.length == 4) {
-						const last = params.at(-1);
-						if (isNaN(parseInt(last))) {
-							type = last;
-						} else {
-							page = parseInt(last);
-						}
-					}
-
-					if (params.length > 4) {
-						page = parseInt(params.at(-1));
-						type = params.at(-2);
-					}
-
-					let path = `/tag/${tag}`;
-					if (type !== 'good')
-						path += `/${type}`
-
-					engine.tabs.sendMessage(sender.tab.id, {
-						action: 'tag', 
-						data: await $this.getTag(tag.replace('+', ' '), type, page),
-						type: type,
-						page: page,
-						path: path,
-						url: decodeURI(url)
-					});
 					break;
-				case 'mark': // mark post as viewed
-					engine.storage.local.get([request.data], function(data) {
-						if (!(request.data in data))
-							data[request.data] = {};
-						
-						Object.assign(data[request.data], {
-							id: parseInt(request.data),
-							added: parseInt(Math.floor(Date.now() / 1000))
-						});
-
-						engine.storage.local.set(data);
-					});
-					break;
-				case 'download':
-					if (engine.runtime.getManifest().manifest_version == 3) {
-						engine.downloads.download({
-							url: request.data.data, 
-							filename: `${$this.options.download_folder}${request.data.filename}`,
-							conflictAction: 'overwrite'
-						});
-					} else {
-						engine.downloads.download({
-							url: request.data.url, 
-							headers: [
-								{name: 'Referer', value: 'https://joyreactor.cc/'}
-							],
-							filename: `${$this.options.download_folder}${request.data.filename}`,
-							conflictAction: 'overwrite'
-						});
+				case 'posts':
+					switch (request.action) {
+						case 'get': // get posts in visited history
+							await $this.response(sender.tab.id, {
+								method: request.method, 
+								action: 'set', 
+								data: await $this.posts.get(request.data)
+							});
+							break;
+						case 'set': // set post as viwed
+							await $this.response(sender.tab.id, {
+								method: request.method, 
+								action: 'viewed',
+								data: await $this.posts.set(request.data)
+							});
+							break;
+						case 'unlock': // unlock post
+							await $this.response(sender.tab.id, {
+								method: request.method, 
+								action: request.action,
+								data: await $this.posts.unlock(request.data)
+							});
+							break;
+						case 'cache':
+							$this.posts.cache();
+							break;
 					}
+					break;
+				case 'comments':
+					switch (request.action) {
+						case 'get': // get comments list
+							await $this.response(sender.tab.id, {
+								method: request.method, 
+								action: 'set', 
+								data: await $this.comments.get(request.data)
+							});
+							break;
+					}
+					break;
+				case 'download': // quick download
+					$this.download(request.data);
 					break;
 			}
 
 			return true;
 		});
-		engine.runtime.onInstalled.addListener(async function() {
-			// import data from history to storage
-			$this.startUp();
-			$this.setStatus(await $this.getStatus());
-		});
-		engine.runtime.onStartup.addListener(async function() {
-			// import data from history to storage
-			$this.startUp();
-			$this.setStatus(await $this.getStatus());
-		});
-		engine.storage.sync.onChanged.addListener(async function() {
-			$this.options = await $this.getOptions();
-		});
-		engine.action.onClicked.addListener(async function() {
-			const enabled = await $this.getStatus();
-
-			if (enabled) { // if enabled
-				$this.setStatus(false);
-			} else {
-				$this.setStatus(true);
-			}
-
-			// send reload
-			engine.tabs.query({
-				active: true, 
-				url: engine.runtime.getManifest()['content_scripts'][0]['matches']
-			}, function(tabs) {
-				for (const i in tabs) {
-					engine.tabs.sendMessage(tabs[i].id, {action: 'reload'});
-				}
-			});
-		});
-	}
-	rulesV3() {
-		const $this = this;
-
-		const rules = [
-			{
-				id: 1,
-				priority: 1,
-				action: {
-					type: 'modifyHeaders',
-					requestHeaders: [
-						{ header: 'Origin', operation: 'set', value: 'https://api.joyreactor.cc' },
-						{ header: 'Content-Type', operation: 'set', value: 'application/json' }
-					],
-					responseHeaders: [
-						{ header: 'Access-Control-Allow-Headers', operation: 'set', value: 'Content-Type' },
-						{ header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' }
-					]
-				},
-				condition: {
-					urlFilter: 'https://api.joyreactor.cc/graphql?JV=1',
-					resourceTypes: ['xmlhttprequest']
-				}
-			},
-			{
-				id: 2,
-				priority: 1,
-				action: {
-					type: 'allow'
-				},
-				condition: {
-					urlFilter: '*/tag/*',
-					resourceTypes: ['main_frame']
-				}
-			},
-			{
-				id: 3,
-				priority: 1,
-				action: {
-					type: 'redirect',
-					redirect: {
-						transform: {
-							path: '',
-							fragment: '#JV=tag'
-						}
-					}
-				},
-				condition: {
-					urlFilter: '/images/censorship/*',
-					resourceTypes: ['main_frame']
-				}
-			},
-			{
-				id: 4,
-				priority: 1,
-				action: {
-					type: 'modifyHeaders',
-					requestHeaders: [
-						{ header: 'Referer', operation: 'set', value: 'https://joyreactor.cc/' }
-					],
-					responseHeaders: [
-						{ header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' }
-					]
-				},
-				condition: {
-					urlFilter: '/pics/post/*',
-					resourceTypes: ['xmlhttprequest']
-				}
-			}
-		];
-
-		engine.declarativeNetRequest.getSessionRules({}, function(event) {
-			if (event.length !== rules.length)
-				engine.declarativeNetRequest.updateSessionRules({addRules: rules, removeRuleIds: []}, function() {});
-		});
-		engine.webRequest.onBeforeRequest.addListener(
-			function(event) {
-				if (event.url.match(/tag/))
-					$this.links[event.requestId] = event.url;
-
-				if (event.url.match(/censorship/)) {
-					if (event.requestId in $this.links) {
-						$this.redirects[event.tabId] = $this.links[event.requestId];
-					}
-				}
-			},
-			{
-				urls: ['<all_urls>'],
-				types: ['main_frame']
-			}
-		);
-	}
-	rulesV2() {
-		const $this = this;
-
-		engine.webRequest.onBeforeSendHeaders.addListener(
-			function(details) {
-				let headers = details.requestHeaders;
-				for (var i = 0, l = headers.length; i < l; ++i) {
-					if (headers[i].name == 'Origin') {
-						headers[i].value = "https://api.joyreactor.cc";
-						break;
-					}
-				}
-				headers.push({name: 'Content-Type', value: 'application/json'});
-				return {requestHeaders: headers};
-			},
-			{
-				urls: ['https://api.joyreactor.cc/graphql?JV=1'],
-				types: ['xmlhttprequest']
-			},
-			['requestHeaders', 'blocking']
-		);
-		engine.webRequest.onBeforeRequest.addListener(
-			function(event) {
-				if (event.url.match(/tag/))
-					$this.links[event.requestId] = event.url;
-
-				if (event.url.match(/censorship/)) {
-					if (event.requestId in $this.links) {
-						$this.redirects[event.tabId] = $this.links[event.requestId];
-					}
-					return {
-						redirectUrl: `${new URL(event.url).origin}#JV=tag`
-					};
-				}
-			},
-			{
-				urls: ['<all_urls>'],
-				types: ['main_frame']
-			},
-			['blocking']
-		);
-	}
-	async me(data) {
-		return new Promise(function(resolve) {
-			// flush cache
-			if (data === 'flush') {
-				engine.storage.session.remove('me');
-				resolve(false);
-			} else {
-				// get from cache
-				if (data === undefined) {
-					engine.storage.session.get('me', function(cache) {
-						const time = Math.floor(Date.now() / 1000);
-						if ('me' in cache) {
-							// cached 1h
-							if ((time - cache.me.time) < 3600) {
-								resolve(cache.me);
-							}
-						} 
-
-						resolve(false);
-					});
-				} else { // set cache
-					data.time = Math.floor(Date.now() / 1000);
-					engine.storage.session.set({me: data});
-					resolve(data);
-				}
-			}
-		});
-	}
-	async startUp() {
-		const regexp = new RegExp("(http|https)://[a-zA-Z0-9-.]*(reactor|jr-proxy|jrproxy)[a-z.]+/post/([0-9]+)[/]{0,1}");
-		// get all history. check by url, because multidomain, but single engine and database
-		engine.storage.local.get(null, function(exists) {
-			engine.history.search({'text': '/post/', 'maxResults': 1000000, 'startTime': 0}, function(visits) {
-				if (visits.length > 0) {
-					do {
-						const item = visits.shift();
-						// check full url
-						const match = item.url.match(regexp);
-
-						if (match) {
-							let data = {};
-
-							if (match[3] in exists)
-								continue;
-
-							data[match[3]] = {
-								id: parseInt(match[3]),
-								added: parseInt(Math.floor(item.lastVisitTime/1000))
-							};
-
-							engine.storage.local.set(data);
-						}
-					} while (visits.length > 0);
-				}
-			});
-		});
-	}
-	async getOptions() {
-		// get options with default data
-		const options = (await engine.storage.sync.get({
-			options: {
-				tags: '',
-				exceptions: 'tag',
-				pager: 'withoutfirst',
-				tag_mark: 'enabled',
-				download: 'enabled',
-				download_folder: 'JV/',
-				ignore_url: ['post', 'user', 'discussion', 'people'],
-				page_action: 'all',
-				post: 'translucent',
-				opacity: 0.6,
-				depth: 3
-			}
-		})).options;
-
-		// string to array
-		options.tags = options.tags.split(',').map(function(tag) {
-			// protect from edvard ruki penisy
-			return tag.trim().toLowerCase();
-		});
-
-		return options;
-	}
-	async getStatus() {
-		return (await engine.storage.sync.get({enabled: true})).enabled;
-	}
-	async setStatus(status) {
-		await engine.storage.sync.set({enabled: status});
-
-		let path = '..';
-		if (is_firefox()) { path = 'data'; }
 		
-		if (status) {
-			engine.action.setIcon({path: `${path}/images/enabled.png`});
-		} else {
-			engine.action.setIcon({path: `${path}/images/disabled.png`});
-		}
-	}
-	async check(ids) {
-		const $this = this;
-
-		return new Promise(function(resolve) {
-
-			let offset;
-			switch (parseInt($this.options.depth)) {
-				case 0: // 24 h
-					offset = Math.floor(Date.now() / 1000) - (60*60*24);
-					break;
-				case 1: // 1 week
-					offset = Math.floor(Date.now() / 1000) - (60*60*24*7);
-					break;
-				case 2: // 2 week
-					offset = Math.floor(Date.now() / 1000) - (60*60*24*14);
-					break;
-				case 3: // 1 month
-					offset = Math.floor(Date.now() / 1000) - (60*60*24*30);
-					break;
-				case 4: // 6 months
-					offset = Math.floor(Date.now() / 1000) - (60*60*24*180);
-					break;
-				case 5: // without limits
-					offset = 0;
-					break;
-			}
-
-			let result = {};
-
-			// get all data from storage
-			engine.storage.local.get(ids, function(object) {
-				const list = Object.values(object);
-				if (list.length > 0) {
-					do {
-						const item = list.shift();
-						if (item.added === undefined)
-							continue;
-
-						if (item.added > offset) {
-							result[item.id] = new Date(item.added * 1000).toLocaleString('uk-UA').replaceAll(',', '');
-						}
-					} while (list.length > 0);
-				}
-
-				resolve(result);
-			});
+		engine.storage.sync.onChanged.addListener(function() {
+			$this.vars.options = {};
+			$this.options.get();
 		});
-	}
-	async unlock(postIds) {
-		const $this = this;
+		engine.runtime.onInstalled.addListener(async function() {
+			await $this.status.set(await $this.status.get());
 
-		return new Promise(function(resolve) {
+			// on install/update extension - clear cache
+			$this.posts.cache();
 
-			engine.storage.local.get(postIds, function(exists) {
-				const params = [];
-
+			// import posts from browser history to extension history
+			// get all history. check by url, because multidomain, but single engine and database
+			engine.history.search({'text': '/post/', 'maxResults': 1000000, 'startTime': 0}, function(visits) {
 				let data = {};
 
-				for (const post_id of postIds) {
-					data[post_id] = {};
+				if (visits.length > 0) {
+					// while have
+					while (visits.length) {
+						const item = visits.shift();
 
-					if (post_id in exists) {
-						data[post_id] = exists[post_id];
+						const match = item.url.match(/(http|https):\/\/[a-zA-Z0-9-.]*(reactor|jr-proxy|jrproxy)[a-z.]+\/post\/([0-9]+)[/]{0,1}/);
 
-						if ('text' in exists[post_id])
-							continue;
+						// if this rly post page
+						if (match) {
+							data[match[3]] = {
+								post_id: match[3],
+								added: Math.floor(item.lastVisitTime / 1000)
+							};
+						}
 					}
-
-					params.push(`post${post_id}:node(id:"${btoa(`Post:${post_id}`)}") { ... on Post { createdAt text attributes { id type ...Attribute_attribute } tags { seoName } } }`);
+					// save to extension history
+					$this.posts.save(data);
 				}
+			});
 
-				if (params.length > 0) {
-					fetch('https://api.joyreactor.cc/graphql?JV=1', {
-						method: 'POST',
-						body: JSON.stringify({query: `
-							{${params.join(' ')}}
-							fragment AttributePicture_attribute on AttributePicture { 
-								__typename
-							} 
-							fragment AttributeEmbed_attribute on AttributeEmbed { 
-								__typename
-								value
-							}
-							fragment Attribute_attribute on Attribute { 
-								...AttributePicture_attribute
-								...AttributeEmbed_attribute 
-							}`})
-					}).then(response => response.json()).then(function(response) {
-						let cached = {};
-						for (const [key, post] of Object.entries(response.data)) {
-							const post_id = key.match(/[0-9]+/)[0];
-							const added = Math.floor(new Date(post.createdAt).getTime() / 1000);
+			// Это существует только для того, что бы сконвертировать уже имеющуюся историю просмотренных постов, по причине замены id на post_id
+			// Спустя какое то время это будет удалено
+			//////////////////////////////////// RM ////////////////////////////////////
+			engine.storage.local.get(null, function(data) {
+				let update = {};
+				for (const post_id in data) {
+					if (!is_num(post_id))
+						continue;
 
-							Object.assign(data[post_id], post);
-
-							if (($this.server_time - added) > 3600)
-								cached[post_id] = data[post_id]
+					if ('id' in data[post_id]) {
+						update[post_id] = {
+							post_id: data[post_id].id,
+							added: data[post_id].added
 						}
-						
-						if (Object.keys(cached).length > 0) {
-							engine.storage.local.set(cached);
-						}
+					}
+				}
+				$this.posts.save(update);
+			});
+			//////////////////////////////////// RM ////////////////////////////////////
+		});
+		// click on extension icon
+		engine.action.onClicked.addListener(async function() {
+			// toggle status
+			if (await $this.status.get()) {
+				await $this.status.set(false);
+			} else {
+				await $this.status.set(true);
+			}
 
-						resolve(data);
-					});
-				} else {
-					resolve(data);
+			// send reload to active page
+			engine.tabs.query({
+				active: true,
+				url: engine.runtime.getManifest()['content_scripts'][0]['matches']
+			}, async function(tabs) {
+				for (const tab of tabs) {
+					await $this.response(tab.id, {method: 'reload'});
 				}
 			});
 		});
 	}
-	async getTag(name, type, page) {
-		const $this = this;
-		
+	async response(tab_id, data) {
 		return new Promise(function(resolve) {
-			let pageStr;
-			if (page === 0) {
-				pageStr = `offset: 0`;
-			} else {
-				pageStr = `page:${page}`;
-			}
+			engine.tabs.sendMessage(tab_id, data).then(function() {
+				resolve(true);
+			}).catch(function() {
+				resolve(false);
+			});
+		})
+	}
+	get token() {
+		return {
+			query: function() {
+				// get any active tab
+				engine.tabs.query({
+					url: engine.runtime.getManifest()['content_scripts'][0]['matches']
+				}, async function(tabs) {
+					for (const tab of tabs) {
+						// tab must be alive
+						if (tab.status == 'unloaded')
+							continue;
 
-			const params =  `{
-						tag(name: "${name}") {
-						... on Tag {
-							id
-							count
-							name
-							seoName
-							synonyms
-							rating
-							subscribers
-							mainTag { 
-								id
-								count
-								name
-								seoName
-								synonyms
-								rating
-								subscribers
-								image { id }
+						// if sended - stop
+						if (await $this.response(tab.id, {method: 'token'}))
+							break;
+					}
+				});
+			},
+			check: function() {
+				return new Promise(function(resolve) {
+					// diff of expire time and realtime
+					const time = $this.vars.token.expires - $this.timestamp;
+					// run right now
+					if (time < 0) {
+						$this.token.query();
+						resolve(false);
+					} else {
+						resolve(true);
+					}
+				});
+			},
+			set: function(data) {
+				return new Promise(function(resolve) {
+					// no user
+					if (data === null) {
+						$this.vars.token.expires = $this.timestamp + $this.timestamp;
+					} else {
+						$this.vars.token.string = data;
+						$this.vars.token.expires = JSON.parse(atob(data.split('.')[1])).exp;
+
+						const time = $this.vars.token.expires - $this.timestamp;
+						if (!$this.vars.token.cycle) {
+							$this.vars.token.cycle = setTimeout(function() {
+								$this.vars.token.cycle = false;
+								$this.token.query();
+							}, (time - 5) * 1000);
+						}
+					}
+
+					if (engine.runtime.getManifest().manifest_version == 3) {
+						// net rules. auto authorization with token
+						engine.declarativeNetRequest.updateDynamicRules({addRules: [{
+							id: 1,
+							priority: 1,
+							action: {
+								type: 'modifyHeaders',
+								requestHeaders: [
+									{ header: 'Origin', operation: 'set', value: new URL($this.api).origin },
+									{ header: 'Content-Type', operation: 'set', value: 'application/json' },
+									{ header: 'Authorization', operation: 'set', value: `Bearer ${$this.vars.token.string}` }
+								],
+								responseHeaders: [
+									{ header: 'Access-Control-Allow-Headers', operation: 'set', value: 'Content-Type' },
+									{ header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' }
+								]
+							},
+							condition: {
+								urlFilter: $this.api
 							}
-							image { id }
-							hierarchy { seoName name }
-							articlePost { text attributes { id type ...Attribute_attribute } }
-							postPager(type:${type.toUpperCase()}, favoriteType:null) {
-								count
-								posts(${pageStr}) { 
-									... on Post { 
+						}], removeRuleIds: [1]}, function() {});
+					}
+					
+					resolve(true);
+				});
+			},
+			del: function() {
+				$this.vars.token.expires = 0;
+				$this.vars.token.string = '';
+				$this.vars.token.cycle = false;
+			}
+		};
+	}
+	get options() {
+		return {
+			get: function() {
+				return new Promise(function(resolve) {
+					const default_options = {
+						sync_key: '',
+
+						extension_ignore_url: ['post', 'user', 'discussion', 'people'],
+						extension_depth: 3,
+
+						tags_list: [],
+						tags_exceptions_page: 'tag',
+
+						download_status: 1,
+						download_folder: 'JV/',
+						download_prefix: '',
+
+						post_tags_mark: 1,
+						post_pages_action: 'all',
+						post_visual_mark: 1,
+						post_action: 'translucent',
+						post_action_unread: 0,
+						post_opacity: 0.6,
+						post_pager: 'withoutfirst',
+						post_visited_date: 1
+					}
+
+					// if no options loaded
+					if (!Object.keys($this.vars.options).length) {
+						engine.storage.sync.get({options: {}}, async function(data) {
+							// check key exists in options -> default value
+							for (const [key, value] of Object.entries(default_options)) {
+								if (!(key in data.options))
+									data.options[key] = value;
+							}
+							
+							$this.vars.options = data.options;
+							
+							if (Array.isArray($this.vars.options.tags_list)) {
+								$this.vars.options.tags_list = await $this.tag.ids($this.vars.options.tags_list);
+								engine.storage.sync.set({options: $this.vars.options});
+							}
+
+							resolve($this.vars.options);
+						});
+					} else {
+						resolve($this.vars.options);
+					}
+				});
+			}
+		}
+	}
+	get status() {
+		return {
+			get: async function() {
+				return (await engine.storage.sync.get({enabled: true})).enabled;
+			},
+			set: async function(status) {
+				let path = 'data';
+				if (engine.runtime.getManifest().manifest_version == 3)
+					path = '..';
+
+				await engine.storage.sync.set({enabled: status}, function() {
+					if (status) {
+						engine.action.setIcon({path: `${path}/images/enabled.png`});
+					} else {
+						engine.action.setIcon({path: `${path}/images/disabled.png`});
+					}
+
+					return true;
+				});
+			}
+		}
+	}
+	get user() {
+		return {
+			query: function() {
+				return new Promise(function(resolve) {
+					fetch($this.api, {
+						method: 'POST',
+						body: JSON.stringify({query: `{ me { user { id } blockedTags { mainTag { id } } subscribedTags { mainTag { id } } } }`})
+					}).then(function(response) {
+						return response.json();
+					}).then(function(response) {
+						$this.vars.user =  {
+							user_id: null,
+							tags: {
+								blocked: [],
+								subscribed: []
+							},
+							time: $this.timestamp
+						}
+						if (response.data.me !== null) {
+							// user_id
+							$this.vars.user.user_id = response.data.me.user.id.val();
+							// user tags
+
+							for (const item of response.data.me.blockedTags) {
+								$this.vars.user.tags.blocked.push(item.mainTag.id.val());
+							}
+							for (const item of response.data.me.subscribedTags) {
+								$this.vars.user.tags.subscribed.push(item.mainTag.id.val());
+							}
+						}
+
+						engine.storage.local.set({user: $this.vars.user});
+
+						// try user sync
+						$this.sync.get();
+
+						resolve($this.vars.user);
+					});
+				});
+			},
+			get: function() {
+				return new Promise(async function(resolve) {
+					// if have data in variable
+					if (Object.keys($this.vars.user).length) {
+						if (($this.timestamp - $this.vars.user.time) < 3600) {
+							resolve($this.vars.user);
+							return true;
+						}
+					} else {
+						engine.storage.local.get('user', async function(cached) {
+							// if found in cache
+							if ('user' in cached) {
+								// cached 1h
+								if (($this.timestamp - cached.user.time) < 3600) {
+									$this.vars.user = cached.user;
+									resolve($this.vars.user);
+									return true;
+								}
+							}
+						});
+					}
+
+					resolve(await $this.user.query());
+					return true;
+				});
+			},
+			del: async function() {
+				await $this.user.query();
+			}
+		}
+	}
+	get sync() {
+		const domain = 'https://bayanometr.cc';
+
+		return {
+			hash: function() {
+				return new Promise(function(resolve) {
+					if (!$this.vars.options.sync_key)
+						resolve(false);
+
+					engine.storage.local.get('user', function(cached) {
+						if ('user' in cached) {
+							resolve(sha256(`${cached.user.user_id}_${$this.vars.options.sync_key}`));
+						} else {
+							if ('user_id' in $this.vars.user) {
+								resolve(sha256(`${$this.vars.user.user_id}_${$this.vars.options.sync_key}`));
+							} else {
+								resolve(false);
+							}
+						}
+					});
+				});
+			},
+			get: async function() {
+				// skip if no sync key
+				const hash = await $this.sync.hash();
+				if (!hash) { return false; }
+				
+				// get sync data
+				fetch(`${domain}/sync/get/`, {
+					method: 'POST',
+					body: JSON.stringify({user_hash: hash})
+				}).then(function(response) {
+					return response.json();
+				}).then(function(response) {
+					// in boolean - timeout
+					if (typeof response.sync == 'boolean')
+						return false;
+
+					console.info('sync get history');
+
+					engine.storage.local.get(null, function(exists) {
+						let data = {};
+
+						for (const post of Object.values(response.sync)) {
+							// keep to set only those that dont exist 
+							if (post.post_id in exists)
+								continue;
+
+							data[post.post_id] = {
+								post_id: post.post_id,
+								added: post.post_added
+							}
+						}
+
+						if (Object.values(data).length) {
+							console.info(`sync get ${Object.values(data).length}`);
+							$this.posts.save(data);
+						}
+
+						let sync = [];
+						for (const post of Object.values(exists)) {
+							// if this only cache
+							if (!('added' in post))
+								continue;
+							// if exist on recived data
+							if (post.post_id in response.sync)
+								continue;
+
+							sync.push({post_id: post.post_id, added: post.added});
+						}
+
+						$this.sync.set(sync);
+					});
+				});
+			},
+			set: async function(sync) {
+				if (!sync.length)
+					return false;
+				// skip if no sync key
+				const hash = await $this.sync.hash();
+				if (!hash) { return false; }
+
+				// to up sync
+				fetch(`${domain}/sync/set/`, {
+					method: 'POST',
+					body: JSON.stringify({user_hash: hash, data: sync})
+				}).then(function(response) {
+					return response.json();
+				}).then(function(response) {
+					console.info('sync set history');
+					console.info(`sync set ${Object.values(sync).length}`);
+				});
+			},
+			clear: async function(clear) {
+				const hash = await $this.sync.hash();
+				if (!hash) { return false; }
+
+				fetch(`${domain}/sync/del/`, {
+					method: 'POST',
+					body: JSON.stringify({user_hash: hash, clear: clear})
+				}).then(function(response) {
+					return response.json();
+				}).then(function(response) {
+					console.info('sync clear history');
+				});
+			},
+			options: (function() {
+				return {
+					get: function() {
+						return new Promise(async function(resolve) {
+							const hash = await $this.sync.hash();
+							if (!hash) { return false; }
+
+							fetch(`${domain}/sync/options/`, {
+								method: 'POST',
+								body: JSON.stringify({user_hash: hash})
+							}).then(function(response) {
+								return response.json();
+							}).then(function(response) {
+								if (typeof response.sync == 'object') {
+									console.info('sync get options');
+
+									for (const [key, value] of Object.entries(response.sync)) {
+										$this.vars.options[key] = value;
+									}
+
+									engine.storage.sync.set({options: $this.vars.options});
+									resolve($this.vars.options);
+								}
+							});
+						});
+					},
+					set: async function() {
+						const hash = await $this.sync.hash();
+						if (!hash) { return false; }
+
+						// deep copy
+						let options = JSON.parse(JSON.stringify($this.vars.options));
+
+						// delete private info
+						delete options.sync_key;
+
+						fetch(`${domain}/sync/options/`, {
+							method: 'POST',
+							body: JSON.stringify({user_hash: hash, options: options})
+						}).then(function(response) {
+							return response.json();
+						}).then(function(response) {
+							console.info('sync set options');
+						});
+					}
+				}
+			})()
+		}
+	}
+	get tag() {
+		return {
+			get: async function(tab_id, referer) {
+				return new Promise(async function(resolve) {
+					let params;
+					let tag_url;
+
+					// we have forwards?
+					if (tab_id in $this.vars.comeback.forwards) {
+						tag_url = decodeURI($this.vars.comeback.forwards[tab_id]);
+						delete $this.vars.comeback.forwards[tab_id];
+					} else {
+						// try referer
+						tag_url = decodeURI(referer);
+					}
+
+					if (!tag_url.match('/tag/')) { resolve(false); }
+
+					params = new URL(tag_url).pathname.split('/');
+
+					const tag_name = decodeURI(params[2]).replace('+', ' ');
+					let tag_type = 'good';
+					let tag_page_num = 0;
+
+					// /tag/tagname/best/123
+					if (params.length > 4) {
+						tag_page_num = parseInt(params.at(-1));
+						tag_type = params.at(-2);
+					}
+
+					// /tag/tagname/123 || /tag/tagname/all
+					if (params.length == 4) {
+						const last = params.at(-1);
+						if (isNaN(parseInt(last))) {
+							tag_type = last;
+						} else {
+							tag_page_num = parseInt(last);
+						}
+					}
+
+					let url_path = `/tag/${tag_name.replace(' ', '+')}`;
+					if (tag_type !== 'good')
+						url_path += `/${tag_type}`;
+
+					resolve({
+						method: 'tag', 
+						action: 'set',
+						data: await $this.tag.tagQuery(tag_name, tag_type, tag_page_num),
+						tag_type: tag_type,
+						tag_page_num: tag_page_num,
+						tag_url: tag_url,
+						url_path: url_path
+					});
+				});
+			},
+			tagQuery: function(tag_name, tag_type, tag_page_num) {
+				return new Promise(function(resolve) {
+					let pagerParam;
+					if (tag_page_num === 0) {
+						pagerParam = `offset: 0`;
+					} else {
+						pagerParam = `page:${tag_page_num}`;
+					}
+
+					const params =  `
+						{
+							tag(name: "${tag_name}") {
+								... on Tag {
+									id
+									count
+									name
+									synonyms
+									rating
+									subscribers
+									image { id }
+									mainTag { 
 										id
+										count
+										name
+										synonyms
 										rating
-										text
-										createdAt
-										commentsCount
-										user { id username }
-										tags { seoName name hierarchy { id } }
-										attributes { 
-											id
-											type
-											...Attribute_attribute
+										subscribers
+										image { id }
+									}
+									hierarchy { name }
+									articlePost { text attributes { id type image { type hasVideo } ...Attribute_attribute } }
+									postPager(type:${tag_type.toUpperCase()}, favoriteType:null) {
+										count
+										posts(${pagerParam}) { 
+											... on Post { 
+												id
+												text
+												createdAt
+												commentsCount
+												user { id username }
+												tags { name hierarchy { id } }
+												attributes { id type image { type hasVideo } ...Attribute_attribute }
+											}
 										}
 									}
 								}
 							}
 						}
-					}
-				}
-				fragment AttributePicture_attribute on AttributePicture { 
-					__typename
-				} 
-				fragment AttributeEmbed_attribute on AttributeEmbed { 
-					__typename
-					value
-				}
-				fragment Attribute_attribute on Attribute { 
-					...AttributePicture_attribute
-					...AttributeEmbed_attribute 
-				}`;
-			
-			fetch('https://api.joyreactor.cc/graphql?JV=1', {
-				method: 'POST',
-				body: JSON.stringify({query: params})
-			}).then(response => response.json()).then(async function(response) {
-				if (response.data.tag.id !== response.data.tag.mainTag.id) {
-					response.data.tag.id = response.data.tag.mainTag.id;
-					response.data.tag.count = response.data.tag.mainTag.count;
-					response.data.tag.name = response.data.tag.mainTag.name;
-					response.data.tag.seoName = response.data.tag.mainTag.seoName;
-					response.data.tag.synonyms = response.data.tag.mainTag.synonyms;
-					response.data.tag.rating = response.data.tag.mainTag.rating;
-					response.data.tag.subscribers = response.data.tag.mainTag.subscribers;
-				}
+						fragment AttributePicture_attribute on AttributePicture { __typename } 
+						fragment AttributeEmbed_attribute on AttributeEmbed { __typename value }
+						fragment Attribute_attribute on Attribute { ...AttributePicture_attribute ...AttributeEmbed_attribute }`;
+					
+					fetch($this.api, {
+						method: 'POST',
+						body: JSON.stringify({query: params})
+					}).then(function(response) {
+						return response.json();
+					}).then(async function(response) {
 
-				if (!response.data.tag.postPager.posts.length && type !== 'all') {
-					response = await $this.getTag(name, 'all', page);
-				} else {
-					response = response.data.tag;
-				}
-
-				if (response.image === null)
-					response.image = 0;
-
-				let data = {};
-
-				for (const post of response.postPager.posts) {
-					const post_id = atob(post.id).match(/([0-9]+)/)[1];
-					const added = Math.floor(new Date(post.createdAt).getTime() / 1000);
-
-					if (($this.server_time - added) > 3600)
-						data[post_id] = {text: post.text, attributes: post.attributes, tags: post.tags};
-
-				}
-
-				if (Object.keys(data).length > 0) {
-					engine.storage.local.get(Object.keys(data), function(exists) {
-						for (let key in exists) {
-							Object.assign(data[key], exists[key]);
+						// if this is synonym of tag - set main tag data
+						if (response.data.tag.id !== response.data.tag.mainTag.id) {
+							for (const [key, value] of Object.entries(response.data.tag.mainTag)) {
+								response.data.tag[key] = value;
+							}
 						}
-						
-						engine.storage.local.set(data);
-					});
-				}
 
-				resolve(response);
+						if (response.image === null)
+							response.image = 0;
+
+						// if no data -> try 'all'
+						if (!response.data.tag.postPager.posts.length && tag_type !== 'all') {
+							response = await $this.tag.tagQuery(tag_name, 'all', tag_page_num);
+						} else {
+							response = response.data.tag;
+
+							response.tag_id = response.id.val();
+
+							// data to cache censored posts
+							let tocache = {};
+
+							for (const post of response.postPager.posts) {
+								post.post_id = post.id.val();
+								post.user.id = post.user.id.val();
+
+								// tags
+								post.tagsList = [];
+								for (const tag of post.tags) {
+									const tagIds = [];
+									for (var i of tag.hierarchy) {
+										tagIds.push(i.id.val());
+									}
+									post.tagsList.push({
+										name: tag.name,
+										ids: tagIds.join(','),
+										link: tag.name.replaceAll(' ', '+')
+									});
+								}
+
+								// added date/time/timestamp
+								Object.assign(post, post.createdAt.date());
+
+								for (const attribute of post.attributes) {
+									attribute.id = attribute.id.val();
+								}
+
+								// if post was added more than an hour ago -> to cache
+								if (($this.timestamp - post.timestamp) > 3600)
+									tocache[post.post_id] = post;
+							}
+
+							// if exists data to cache
+							if (Object.keys(tocache).length > 0) {
+								$this.posts.save(tocache);
+							}
+						}
+
+						resolve(response);
+					});
+				});
+			},
+			state: function(data) {
+				return new Promise(function(resolve) {
+					fetch($this.api, {
+						method: 'POST',
+						body: JSON.stringify({
+							query: `mutation FavoriteBlogMutation($id: ID! $requestedState: FavoriteTagState!) {
+								favoriteTag(id: $id, requestedState: $requestedState) { __typename }
+							}`,
+							variables: {id: btoa(`Tag:${data.tag_id}`), requestedState: data.state}
+						})
+					}).then(function() {
+						$this.user.del();
+						resolve(true);
+					});
+				});
+			},
+			ids: function(tags) {
+				return new Promise(function(resolve) {
+					const list = [];
+					for (const i in tags) {
+						list.push(`tag${i}:tag(name:"${tags[i]}") { mainTag { id } }`);
+					}
+					
+					let result = {};
+					fetch($this.api, {
+						method: 'POST',
+						body: JSON.stringify({query: `{${list.join(' ')}}`})
+					}).then(function(response) {
+						return response.json();
+					}).then(function(response) {
+						for (const [i, tag] of Object.entries(response.data)) {
+							result[tags[i.match(/([0-9]+)/)[1]]] = tag.mainTag.id.val();
+						}
+						resolve(result);
+					});
+				});
+			}
+		}
+	}
+	get posts() {
+		return {
+			save: function(save) {
+				engine.storage.local.get(Object.keys(save), function(exists) {
+					for (var i of Object.keys(save)) {
+						if (!(i in exists))
+							exists[i] = {};
+					}
+					
+					let data = [exists, save].reduce(function(target, item) {
+						for (let k in item) {
+							Object.assign(target[k], item[k]);
+						}
+						return target;
+					});
+
+					for (const post_id in data) {
+						for (const [key, value] of Object.entries(data[post_id])) {
+							if (['post_id', 'added'].includes(key))
+								data[post_id][key] = parseInt(value);
+
+							if (!['post_id', 'added', 'text', 'attributes', 'tags'].includes(key))
+								delete data[post_id][key];
+						}
+					}
+					engine.storage.local.set(data);
+				});
+
+				return  true;
+			},
+			get: function(post_ids) {
+				return new Promise(function(resolve) {
+					let offset;
+					switch ($this.vars.options.extension_depth) {
+						case 0: // 24 h
+							offset = $this.timestamp - (60*60*24);
+							break;
+						case 1: // 1 week
+							offset = $this.timestamp - (60*60*24*7);
+							break;
+						case 2: // 2 week
+							offset = $this.timestamp - (60*60*24*14);
+							break;
+						case 3: // 1 month
+							offset = $this.timestamp - (60*60*24*30);
+							break;
+						case 4: // 6 months
+							offset = $this.timestamp - (60*60*24*180);
+							break;
+						case 5: // without limits
+							offset = 0;
+							break;
+					}
+
+					let result = {};
+
+					// get all data from storage
+					engine.storage.local.get(post_ids, function(object) {
+						const list = Object.values(object);
+
+						while (list.length) {
+							const item = list.shift();
+							// skip if only cache
+							if (item.added === undefined)
+								continue;
+
+							if (item.added > offset) {
+								result[item.post_id] = new Date(item.added * 1000).toLocaleString('uk-UA').replaceAll(',', '');
+							}
+						}
+
+						resolve(result);
+						return true;
+					});
+				});
+			},
+			set: function(post_id) {
+				return new Promise(function(resolve) {
+					engine.storage.local.get([post_id], function(visited) {
+						// skip if exists
+						if (post_id in visited) {
+							if ('added' in visited[post_id]) {
+								resolve({post_id: post_id, result: false});
+								return false;
+							}
+						}
+
+						let save = {};
+						save[post_id] = {
+							post_id: post_id,
+							added: $this.timestamp
+						};
+
+						$this.posts.save(save);
+
+						resolve({post_id: post_id, result: true});
+						return true;
+					});
+				});
+			},
+			unlock: function(post_ids) {
+				if (!post_ids.length)
+					return false;
+
+				return new Promise(function(resolve) {
+					engine.storage.local.get(post_ids, async function(cached) {
+						// rating / vote / comments info
+						const info = [];
+						// posts to unlock
+						const unlock = {};
+
+						// result data
+						let data = {};
+
+						for (const post_id of post_ids) {
+							data[post_id] = {};
+
+							// push to info
+							info.push(`post${post_id}:node(id:"${btoa(`Post:${post_id}`)}") { 
+											... on Post {
+												id
+												createdAt
+												rating
+												commentsCount
+												viewedCommentsCount
+												vote { power }
+												user { id }
+											} 
+										}`);
+
+							unlock[post_id] = `post${post_id}:node(id:"${btoa(`Post:${post_id}`)}") { 
+								... on Post {
+									id
+									text
+									tags { name }
+									attributes { id type image { type hasVideo } ...Attribute_attribute }
+								} 
+							}`;
+
+							// check in cache
+							if (post_id in cached) {
+								data[post_id] = cached[post_id];
+
+								// check text/attributes in cache. exists - skip unlock
+								if ('text' in cached[post_id]) {
+									delete unlock[post_id];
+								}
+							}
+						}
+
+						// get info
+						await fetch($this.api, {
+							method: 'POST',
+							body: JSON.stringify({query: `{${info.join(' ')}}`})
+						}).then(function(response) {
+							return response.json();
+						}).then(function(response) {
+							// object to array
+							response = Object.values(response.data);
+
+							for (const post of response) {
+								post.post_id = post.id.val();
+								post.user.id = post.user.id.val();
+
+								// added date/time/timestamp
+								Object.assign(post, post.createdAt.date());
+
+								// if post older 6 month, or this is myself post - disable votes and show rating
+								if (($this.timestamp - post.timestamp) > 60*60*24*180 || $this.vars.user.user_id == post.user.id) {
+									post.rating = post.rating.toFixed(1);
+									post.vote = 0;
+								} else {
+									if (post.vote === null) {
+										post.rating = '--';
+									} else {
+										post.rating = post.rating.toFixed(1);
+										if (post.vote.power > 0) {
+											post.vote = 'plus';
+										} else {
+											post.vote = 'minus';
+										}
+									}
+								}
+
+								Object.assign(data[post.post_id], post);
+							}
+						});
+
+						// if need to unlock
+						if (Object.values(unlock).length) {
+							fetch($this.api, {
+								method: 'POST',
+								body: JSON.stringify({query: `
+									{${Object.values(unlock).join(' ')}}
+									fragment AttributePicture_attribute on AttributePicture { __typename } 
+									fragment AttributeEmbed_attribute on AttributeEmbed { __typename value }
+									fragment Attribute_attribute on Attribute { ...AttributePicture_attribute ...AttributeEmbed_attribute }`})
+							}).then(function(response) {
+								return response.json();
+							}).then(function(response) {
+								// object to array
+								response = Object.values(response.data);
+
+								// data to cache censored posts
+								let tocache = {};
+
+								for (const post of response) {
+									post.post_id = post.id.val();
+									for (const attribute of post.attributes) {
+										attribute.id = attribute.id.val();
+									}
+
+									Object.assign(data[post.post_id], post);
+
+									// if post was added more than an hour ago -> to cache
+									if (($this.timestamp - data[post.post_id].timestamp) > 3600)
+										tocache[post.post_id] = post;
+								}
+
+								// if exists data to cache
+								if (Object.keys(tocache).length > 0) {
+									$this.posts.save(tocache);
+								}
+
+								resolve(data);
+							});
+						} else {
+							resolve(data);
+						}
+
+						return true;
+					});
+				});
+			},
+			cache: function() { // clear cache
+				engine.storage.local.get(null, function(data) {
+					let update = {};
+					for (const post_id in data) {
+						// if this not post data
+						if (!is_num(post_id))
+							continue;
+
+						// if this only cache
+						if (!('added' in data[post_id])) {
+							update[post_id] = {};
+						} else {
+							update[post_id] = {
+								post_id: data[post_id].post_id,
+								added: data[post_id].added
+							}
+						}
+					}
+					engine.storage.local.set(update);
+				});
+			}
+		};
+	}
+	get comments() {
+		return {
+			get: function(post_id) {
+				return new Promise(function(resolve) {
+					const params =  `{
+							node(id: "${btoa(`Post:${post_id}`)}") { 
+								... on Post { 
+									viewedCommentsAt
+									user { id }
+									comments { 
+										id
+										text
+										createdAt
+										level
+										rating
+										parent { __typename id }
+										user { id username }
+										vote { power }
+										attributes { id type image { type hasVideo } ...Attribute_attribute }
+									} 
+								} 
+							}
+						}
+						fragment AttributePicture_attribute on AttributePicture { __typename } 
+						fragment AttributeEmbed_attribute on AttributeEmbed { __typename value }
+						fragment Attribute_attribute on Attribute { ...AttributePicture_attribute ...AttributeEmbed_attribute }`;
+					
+					fetch($this.api, {
+						method: 'POST',
+						body: JSON.stringify({query: params})
+					}).then(function(response) {
+						return response.json();
+					}).then(function(response) {
+						response = response.data.node;
+						// comments viwed at
+						const viewed = Math.floor(new Date(response.viewedCommentsAt).getTime() / 1000);
+
+						response.post_id = post_id;
+						response.user.id = response.user.id.val();
+
+						for (let comment of response.comments) {							
+							comment.post_id = post_id;
+
+							comment.id = comment.id.val();
+							comment.parent.id = comment.parent.id.val();
+							comment.user.id = comment.user.id.val();
+							comment.rating = comment.rating.toFixed(1);
+							comment.vote = 0;
+
+							for (const attribute of comment.attributes) {
+								attribute.id = attribute.id.val();
+							}
+
+							// added date/time/timestamp
+							Object.assign(comment, comment.createdAt.date());
+
+							// if comment younger 3 days - enable votes
+							if (($this.timestamp - comment.timestamp) < 60*60*24*3) {
+								if (Math.abs(Math.floor(comment.rating)) < 3 && $this.vars.user.user_id !== comment.user.id)
+									comment.rating = '≈0';
+
+								if ($this.vars.user.user_id !== comment.user.id)
+									comment.vote = 1;
+							}
+
+							if (comment.timestamp > viewed) {
+								if ($this.vars.user.user_id == comment.user.id) {
+									comment.class = 'new_my new';
+								} else {
+									comment.class = 'new';
+								}
+							}
+						}
+
+						resolve(response);
+					});
+				});
+			}
+		}
+	}
+	download(data) {
+		const filename = `${$this.vars.options.download_folder}${$this.vars.options.download_prefix}${data.filename}`;
+
+		if (engine.runtime.getManifest().manifest_version == 3) {
+			engine.downloads.download({
+				url: data.file, 
+				filename: filename,
+				conflictAction: 'overwrite'
 			});
-		});
+		} else {
+			engine.downloads.download({
+				url: data.url, 
+				filename: filename,
+				conflictAction: 'overwrite',
+				headers: [
+					{name: 'Referer', value: 'https://joyreactor.cc/'}
+				]
+			});
+		}
+	}
+	netRules() {
+		if (engine.runtime.getManifest().manifest_version == 3) {
+			const rules = [
+				{
+					id: 1, // allow redirect, if blocked
+					priority: 1,
+					action: { type: 'allow' },
+					condition: { urlFilter: '*/tag/*', resourceTypes: ['main_frame'] }
+				},
+				{
+					id: 2, // back to tag page, if redirect
+					priority: 1,
+					action: { type: 'redirect', redirect: { transform: { path: '', fragment: '#JV=tag' } } },
+					condition: { urlFilter: '/images/censorship/*', resourceTypes: ['main_frame'] }
+				},
+				{
+					id: 3, // images download
+					priority: 1,
+					action: {
+						type: 'modifyHeaders',
+						requestHeaders: [{ header: 'Referer', operation: 'set', value: 'https://joyreactor.cc/' }],
+						responseHeaders: [{ header: 'Access-Control-Allow-Origin', operation: 'set', value: '*' }]
+					},
+					condition: { urlFilter: '/pics/post/*', resourceTypes: ['xmlhttprequest'] }
+				}
+			];
+
+			// if no rules - set it
+			engine.declarativeNetRequest.getSessionRules(function(event) {
+				if (event.length !== rules.length)
+					engine.declarativeNetRequest.updateSessionRules({addRules: rules, removeRuleIds: [1,2,3,4,5]}, function() {});
+			});
+			// catch requests
+			engine.webRequest.onBeforeRequest.addListener(
+				function(event) {
+					// if try to open tag page
+					if (event.url.match(/tag/))
+						$this.vars.comeback.jumps[event.requestId] = event.url;
+
+					// if tag page redirected to censorship page
+					if (event.url.match(/censorship/)) {
+						// find in previous jumps
+						if (event.requestId in $this.vars.comeback.jumps) {
+							$this.vars.comeback.forwards[event.tabId] = $this.vars.comeback.jumps[event.requestId];
+						}
+					}
+				},
+				{ urls: ['<all_urls>'], types: ['main_frame'] }
+			);
+		} else {
+			// modify headers for api requests
+			engine.webRequest.onBeforeSendHeaders.addListener(
+				function(details) {
+					let headers = details.requestHeaders;
+					for (var i = 0, l = headers.length; i < l; ++i) {
+						if (headers[i].name == 'Origin') {
+							headers[i].value = new URL($this.api).origin;
+							break;
+						}
+					}
+					headers.push({name: 'Content-Type', value: 'application/json'});
+					return {requestHeaders: headers};
+				},
+				{ urls: [$this.api], types: ['xmlhttprequest'] },
+				['requestHeaders', 'blocking']
+			);
+			// catch requests
+			engine.webRequest.onBeforeRequest.addListener(
+				function(event) {
+					// if try to open tag page
+					if (event.url.match(/tag/))
+						$this.vars.comeback.jumps[event.requestId] = event.url;
+
+					// if tag page redirected to censorship page
+					if (event.url.match(/censorship/)) {
+						// find in previous jumps
+						if (event.requestId in $this.vars.comeback.jumps) {
+							$this.vars.comeback.forwards[event.tabId] = $this.vars.comeback.jumps[event.requestId];
+						}
+						// back to tag page
+						return { redirectUrl: `${new URL(event.url).origin}#JV=tag` };
+					}
+				},
+				{ urls: ['<all_urls>'], types: ['main_frame'] },
+				['blocking']
+			);
+		}
 	}
 }
 const j = new JV();

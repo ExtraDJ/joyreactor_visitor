@@ -4,7 +4,7 @@
 	"short_name": "JoyReactor Visitor",
 	"description": "",
 	"author": "ExtraDJ",
-	"version": "0.9.5",
+	"version": "1.0.1",
 	"homepage_url": "https://patreon.com/extradj",
 	"icons": {
 		"128": "data/images/logo.png"
@@ -27,7 +27,7 @@
 		"*://jrproxy.com/*"
 	],
 	"background": {
-		"scripts": ["data/js/script.js"]
+		"scripts": ["data/js/sha256.js", "data/js/script.js"]
 	},
 	"options_ui": {
 		"page": "data/options.html",
