@@ -385,6 +385,7 @@ class JV {
 						download_folder: 'JV/',
 						download_prefix: '',
 
+						post_share_disabled: 1,
 						post_tags_mark: 1,
 						post_pages_action: 'all',
 						post_visual_mark: 1,
@@ -861,6 +862,11 @@ class JV {
 			},
 			ids: function(tags) {
 				return new Promise(function(resolve) {
+					if (!tags.length) {
+						resolve({});
+						return false;
+					}
+
 					const list = [];
 					for (const i in tags) {
 						list.push(`tag${i}:tag(name:"${tags[i]}") { mainTag { id } }`);
@@ -874,6 +880,9 @@ class JV {
 						return response.json();
 					}).then(function(response) {
 						for (const [i, tag] of Object.entries(response.data)) {
+							if (tag === null)
+								continue;
+							
 							result[tags[i.match(/([0-9]+)/)[1]]] = tag.mainTag.id.val();
 						}
 						resolve(result);

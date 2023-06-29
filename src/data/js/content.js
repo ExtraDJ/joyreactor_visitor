@@ -580,6 +580,10 @@ class JV {
 				if ($this.vars.options.download_status)
 					item.find('.share_buttons').prepend('<span data-action="download" class="big_button" title="Скачать все картинки из поста"></span>');
 
+				if ($this.vars.options.post_share_disabled)
+					item.find('.share_buttons > a[class^="share"]').remove();
+
+
 				let fandomOrTag = false;
 				const subdomain = window.location.hostname.match(/^(.*?)\.reactor.*/);
 				if (subdomain) {
@@ -632,11 +636,11 @@ class JV {
 
 
 				// disable if post action on tag page, but this is non tag/fandom page
-				if ($this.vars.options.post_pages_action == 'tag' && fandomOrTag) {
+				if ($this.vars.options.post_pages_action == 'tag' && !fandomOrTag) {
 					return {post_id: post_id, check: false};
 				}
 				// disable if post action on non tag page, but this is tag/fandom page
-				if ($this.vars.options.post_pages_action == 'notag' && !fandomOrTag) {
+				if ($this.vars.options.post_pages_action == 'notag' && fandomOrTag) {
 					return {post_id: post_id, check: false};
 				}
 
