@@ -453,7 +453,7 @@ class JV {
 					}).then(function(response) {
 						return response.json();
 					}).then(function(response) {
-						$this.vars.user =  {
+						$this.vars.user = {
 							user_id: null,
 							tags: {
 								blocked: [],
@@ -685,11 +685,19 @@ class JV {
 						tag_url = decodeURI(referer);
 					}
 
-					if (!tag_url.match('/tag/')) { resolve(false); }
+					if (!tag_url.match('/tag/')) {
+						resolve(false);
+						return false;
+					}
 
 					params = new URL(tag_url).pathname.split('/');
 
 					const tag_name = decodeURI(params[2]).replace('+', ' ');
+					if (tag_name === undefined) {
+						resolve(false);
+						return false;
+					}
+					
 					let tag_type = 'good';
 					let tag_page_num = 0;
 
@@ -803,8 +811,8 @@ class JV {
 
 							// data to cache censored posts
 							let tocache = {};
-
-							for (const post of response.postPager.posts) {
+							let remove_blocked = [];
+							for (const [key, post] of Object.entries(response.postPager.posts)) {
 								post.post_id = post.id.val();
 								post.user.id = post.user.id.val();
 
@@ -815,6 +823,10 @@ class JV {
 									for (var i of tag.hierarchy) {
 										tagIds.push(i.id.val());
 									}
+
+									if ($this.vars.user.tags.blocked.includes(tagIds[0]))
+										remove_blocked.push(post.post_id);
+
 									post.tagsList.push({
 										name: tag.name,
 										ids: tagIds.join(','),
@@ -833,6 +845,10 @@ class JV {
 								if (($this.timestamp - post.timestamp) > 3600)
 									tocache[post.post_id] = post;
 							}
+
+							response.postPager.posts = response.postPager.posts.filter(function(item) {
+								return !remove_blocked.includes(item.post_id);
+							});
 
 							// if exists data to cache
 							if (Object.keys(tocache).length > 0) {

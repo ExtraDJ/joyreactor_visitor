@@ -430,10 +430,10 @@ class JV {
 				request.data.favorite = {class: 'add_to_fav', text: 'подписаться'};
 				request.data.block = {class: 'add_to_unpopular', text: 'заблокировать'};
 
-				if (request.data.tag_id in $this.vars.user.tags.blocked)
+				if ($this.vars.user.tags.blocked.includes(request.data.tag_id))
 					request.data.block = {class: 'remove_from_unpopular', text: 'разблокировать'};
 
-				if (request.data.tag_id in $this.vars.user.tags.subscribed)
+				if ($this.vars.user.tags.subscribed.includes(request.data.tag_id))
 					request.data.favorite = {class: 'remove_from_fav', text: 'отписаться'};
 
 				// tag desc
@@ -576,22 +576,26 @@ class JV {
 			check: function(item) {
 				const post_id = item.attr('id').match(/([0-9]+)$/)[1];
 
-				// if quick download enabled - make button
-				if ($this.vars.options.download_status)
-					item.find('.share_buttons').prepend('<span data-action="download" class="big_button" title="Скачать все картинки из поста"></span>');
-
-				if ($this.vars.options.post_share_disabled)
-					item.find('.share_buttons > a[class^="share"]').remove();
-
+				let old = '';
 
 				let fandomOrTag = false;
 				const subdomain = window.location.hostname.match(/^(.*?)\.reactor.*/);
 				if (subdomain) {
 					if (!['old', 'joy'].includes(subdomain[1]))
 						fandomOrTag = true;
+					if (subdomain[1] == 'old')
+						old = 'old';
 				}
 				if ($this.url[1] == 'tag')
 					fandomOrTag = true;
+
+				// if quick download enabled - make button
+				if ($this.vars.options.download_status)
+					item.find('.share_buttons').prepend(`<span data-action="download" class="big_button ${old}" title="Скачать все картинки из поста"></span>`);
+
+				if ($this.vars.options.post_share_disabled)
+					item.find('.share_buttons > a[class^="share"]').remove();
+
 
 				// default without exceptions
 				let exceptions = [];
