@@ -4,7 +4,7 @@
 	"short_name": "JoyReactor Visitor",
 	"description": "",
 	"author": "ExtraDJ",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"homepage_url": "https://patreon.com/extradj",
 	"icons": {
 		"128": "data/images/logo.png"

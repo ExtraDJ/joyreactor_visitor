@@ -43,7 +43,8 @@ class JV {
 			token: {
 				string: '',
 				expires: 0,
-				cycle: false
+				cycle: false,
+				wait: false
 			},
 			options: {},
 			user: {}
@@ -293,6 +294,9 @@ class JV {
 				engine.tabs.query({
 					url: engine.runtime.getManifest()['content_scripts'][0]['matches']
 				}, async function(tabs) {
+					tabs = tabs.sort(function(a, b) {
+						return b.id > a.id ? 1 : b.id < a.id ? -1 : 0;
+					});
 					for (const tab of tabs) {
 						// tab must be alive
 						if (tab.status == 'unloaded')
@@ -304,13 +308,19 @@ class JV {
 					}
 				});
 			},
+			wait: function() {
+				if (!$this.vars.token.wait) {
+					$this.vars.token.wait = setInterval(function() {
+						$this.token.query();
+					}, 2 * 1000);
+				}
+			},
 			check: function() {
 				return new Promise(function(resolve) {
 					// diff of expire time and realtime
 					const time = $this.vars.token.expires - $this.timestamp;
-					// run right now
-					if (time < 0) {
-						$this.token.query();
+					if (time <= 0) {
+						$this.token.wait();
 						resolve(false);
 					} else {
 						resolve(true);
@@ -319,6 +329,10 @@ class JV {
 			},
 			set: function(data) {
 				return new Promise(function(resolve) {
+					if ($this.vars.token.wait) {
+						clearInterval($this.vars.token.wait);
+						$this.vars.token.wait = false;
+					}
 					// no user
 					if (data === null) {
 						$this.vars.token.expires = $this.timestamp + $this.timestamp;
