@@ -60,6 +60,8 @@ class JV {
 
 		$this.netRules();
 		$this.handler();
+
+		await $this.status.set(await $this.status.get());
 	}
 	handler() {
 		// on connect - check token
@@ -81,6 +83,12 @@ class JV {
 			return true;
 		});
 		engine.runtime.onMessage.addListener(async function(request, sender) {
+			// if service worker was unloaded
+			if (!Object.keys($this.vars.options).length) {
+				await $this.options.get();
+				await $this.user.get()
+			}
+			
 			switch (request.method) {
 				case 'token':
 					switch(request.action) {
@@ -1218,11 +1226,12 @@ class JV {
 						response.post_id = post_id;
 						response.user.id = response.user.id.val();
 
-						for (let comment of response.comments) {							
-							comment.post_id = post_id;
+						for (let comment of response.comments) {
+							if (comment.parent !== null)
+								comment.parent.id = comment.parent.id.val();
 
+							comment.post_id = post_id;
 							comment.id = comment.id.val();
-							comment.parent.id = comment.parent.id.val();
 							comment.user.id = comment.user.id.val();
 							comment.rating = comment.rating.toFixed(1);
 							comment.vote = 0;
