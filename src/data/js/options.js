@@ -74,14 +74,6 @@ $(window).on('load', function() {
 
 						$(`[name="${key}"]`).val(value.join(', '));
 						break;
-					case 'sync_key':
-						$(`[name="${key}"]`).val(value);
-						if (value) {
-							$('#sync_get, #sync_set').removeClass('hide');
-						} else {
-							$('#sync_get, #sync_set').addClass('hide');
-						}
-						break;
 					case 'download_folder':
 					case 'download_prefix':
 						$(`[name="${key}"]`).val(value);
@@ -116,14 +108,6 @@ $(window).on('load', function() {
 
 		const reader = new FileReader();
 		switch (key) {
-			case 'sync_key':
-				if (value) {
-					$('#sync_get, #sync_set').removeClass('hide');
-				} else {
-					$('#sync_get, #sync_set').addClass('hide');
-				}
-				options[key] = value;
-				break;
 			case 'extension_ignore_url':
 			case 'tags_list':
 				let list = [];
@@ -208,12 +192,6 @@ $(window).on('load', function() {
 	});
 	$(document).on('click', 'button', async function() {
 		switch ($(this).attr('id')) {
-			case 'sync_get':
-				engine.runtime.sendMessage({method: 'sync', action: 'get'});
-				break;
-			case 'sync_set':
-				engine.runtime.sendMessage({method: 'sync', action: 'set'});
-				break;
 			case 'reset': // reset options
 				if (confirm('Вы уверены что хотите сбросить настройки?')) {
 					engine.storage.sync.clear(function() {
@@ -223,7 +201,6 @@ $(window).on('load', function() {
 				break;
 			case 'clear': // clear history
 				if (confirm('Вы уверены что хотите очистить историю просмотра?')) {
-					engine.runtime.sendMessage({method: 'sync', action: 'clear'});
 					engine.storage.local.get(null, function(data) {
 						let remove = [];
 						for (const post_id in data) {
@@ -244,7 +221,6 @@ $(window).on('load', function() {
 				break;
 			case 'clearall':
 				if (confirm('Вы уверены что хотите очистить настройки и историю?')) {
-					engine.runtime.sendMessage({method: 'sync', action: 'clearall'});
 					engine.storage.sync.clear(function() {
 						engine.storage.local.get(null, function(data) {
 							let remove = [];

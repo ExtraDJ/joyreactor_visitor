@@ -133,7 +133,8 @@ class JV {
 		this.vars = {
 			status: true,
 			options: {},
-			user: {}
+			user: {},
+			init: false
 		};
 		this.lists = {
 			posts: {},
@@ -161,6 +162,9 @@ class JV {
 					engine.runtime.sendMessage({method: 'token', action: 'set', data: await $this.token()});
 					break;
 				case 'options': // received options
+					if ($this.vars.init)
+						return false;
+
 					$this.vars = request;
 
 					// we are ready to user actions
@@ -174,6 +178,8 @@ class JV {
 						// this is normal page
 						$this.posts.get();
 					}
+
+					$this.vars.init = true;
 					break;
 				case 'tag':
 					switch (request.action) {
@@ -358,6 +364,8 @@ class JV {
 				} else {
 					resolve(response.data.me.token);
 				}
+			}).catch(function() {
+				return false;
 			});
 		});
 	}
@@ -1011,12 +1019,18 @@ class JV {
 
 		// find images
 		$.each(content.find('img'), function() {
+			if (!$(this).attr('src').includes('/post/'))
+				return;
+
 			const image_id = $(this).attr('src').match(/([0-9]+)\.[a-z]+$/)[1];
 			items[image_id] = window.location.protocol+$(this).attr('src');
 		});
 
 		// find full links. if exists - replace
 		$.each(content.find('a.prettyPhotoLink, a.video_gif_source'), function() {
+			if (!$(this).attr('href').includes('/post/'))
+				return;
+			
 			const image_id = $(this).attr('href').match(/([0-9]+)\.[a-z]+$/)[1];
 			items[image_id] = window.location.protocol+$(this).attr('href');
 		});

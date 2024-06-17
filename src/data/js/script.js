@@ -55,9 +55,6 @@ class JV {
 			$this.timestamp++;
 		}, 1000);
 
-		if (engine.runtime.getManifest().manifest_version == 3)
-			importScripts('sha256.js');
-
 		$this.netRules();
 		$this.handler();
 
@@ -131,23 +128,6 @@ class JV {
 					switch(request.action) {
 						case 'del': // del user data. login/logout
 							$this.user.del();
-							break;
-					}
-					break;
-				case 'sync':
-					switch (request.action) {
-						case 'get':
-							await $this.response(sender.tab.id, {
-								method: 'options', 
-								options: await $this.sync.options.get(),
-							});
-							break;
-						case 'set':
-							$this.sync.options.set();
-							break;
-						case 'clear':
-						case 'clearall':
-							$this.sync.clear(request.action);
 							break;
 					}
 					break;
@@ -395,8 +375,6 @@ class JV {
 			get: function() {
 				return new Promise(function(resolve) {
 					const default_options = {
-						sync_key: '',
-
 						extension_ignore_url: ['post', 'user', 'discussion', 'people'],
 						extension_depth: 3,
 
@@ -498,9 +476,6 @@ class JV {
 
 						engine.storage.local.set({user: $this.vars.user});
 
-						// try user sync
-						$this.sync.get();
-
 						resolve($this.vars.user);
 					});
 				});
@@ -534,161 +509,6 @@ class JV {
 			del: async function() {
 				await $this.user.query();
 			}
-		}
-	}
-	get sync() {
-		const domain = 'https://bayanometr.cc';
-
-		return {
-			hash: function() {
-				return new Promise(function(resolve) {
-					if (!$this.vars.options.sync_key)
-						resolve(false);
-
-					engine.storage.local.get('user', function(cached) {
-						if ('user' in cached) {
-							resolve(sha256(`${cached.user.user_id}_${$this.vars.options.sync_key}`));
-						} else {
-							if ('user_id' in $this.vars.user) {
-								resolve(sha256(`${$this.vars.user.user_id}_${$this.vars.options.sync_key}`));
-							} else {
-								resolve(false);
-							}
-						}
-					});
-				});
-			},
-			get: async function() {
-				// skip if no sync key
-				const hash = await $this.sync.hash();
-				if (!hash) { return false; }
-				
-				// get sync data
-				fetch(`${domain}/sync/get/`, {
-					method: 'POST',
-					body: JSON.stringify({user_hash: hash})
-				}).then(function(response) {
-					return response.json();
-				}).then(function(response) {
-					// in boolean - timeout
-					if (typeof response.sync == 'boolean')
-						return false;
-
-					console.info('sync get history');
-
-					engine.storage.local.get(null, function(exists) {
-						let data = {};
-
-						for (const post of Object.values(response.sync)) {
-							// keep to set only those that dont exist 
-							if (post.post_id in exists)
-								continue;
-
-							data[post.post_id] = {
-								post_id: post.post_id,
-								added: post.post_added
-							}
-						}
-
-						if (Object.values(data).length) {
-							console.info(`sync get ${Object.values(data).length}`);
-							$this.posts.save(data);
-						}
-
-						let sync = [];
-						for (const post of Object.values(exists)) {
-							// if this only cache
-							if (!('added' in post))
-								continue;
-							// if exist on recived data
-							if (post.post_id in response.sync)
-								continue;
-
-							sync.push({post_id: post.post_id, added: post.added});
-						}
-
-						$this.sync.set(sync);
-					});
-				});
-			},
-			set: async function(sync) {
-				if (!sync.length)
-					return false;
-				// skip if no sync key
-				const hash = await $this.sync.hash();
-				if (!hash) { return false; }
-
-				// to up sync
-				fetch(`${domain}/sync/set/`, {
-					method: 'POST',
-					body: JSON.stringify({user_hash: hash, data: sync})
-				}).then(function(response) {
-					return response.json();
-				}).then(function(response) {
-					console.info('sync set history');
-					console.info(`sync set ${Object.values(sync).length}`);
-				});
-			},
-			clear: async function(clear) {
-				const hash = await $this.sync.hash();
-				if (!hash) { return false; }
-
-				fetch(`${domain}/sync/del/`, {
-					method: 'POST',
-					body: JSON.stringify({user_hash: hash, clear: clear})
-				}).then(function(response) {
-					return response.json();
-				}).then(function(response) {
-					console.info('sync clear history');
-				});
-			},
-			options: (function() {
-				return {
-					get: function() {
-						return new Promise(async function(resolve) {
-							const hash = await $this.sync.hash();
-							if (!hash) { return false; }
-
-							fetch(`${domain}/sync/options/`, {
-								method: 'POST',
-								body: JSON.stringify({user_hash: hash})
-							}).then(function(response) {
-								return response.json();
-							}).then(function(response) {
-								if (typeof response.sync == 'object') {
-									console.info('sync get options');
-
-									for (const [key, value] of Object.entries(response.sync)) {
-										$this.vars.options[key] = value;
-									}
-
-									engine.storage.sync.set({options: $this.vars.options});
-									resolve($this.vars.options);
-								}
-							});
-						});
-					},
-					set: async function() {
-						const hash = await $this.sync.hash();
-						if (!hash) { return false; }
-
-						// deep copy
-						let options = JSON.parse(JSON.stringify($this.vars.options));
-
-						// delete private info
-						delete options.sync_key;
-
-						fetch(`${domain}/sync/options/`, {
-							method: 'POST',
-							body: JSON.stringify({user_hash: hash, options: options})
-						}).then(function(response) {
-							return response.json();
-						}).then(function(response) {
-							console.info('sync set options');
-						});
-					}
-				}
-			})()
 		}
 	}
 	get tag() {
