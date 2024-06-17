@@ -27,7 +27,7 @@
 		"*://jrproxy.com/*"
 	],
 	"background": {
-		"scripts": [data/js/script.js"]
+		"scripts": ["data/js/script.js"]
 	},
 	"options_ui": {
 		"page": "data/options.html",
